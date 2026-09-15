@@ -2,7 +2,7 @@
  * Pool constants for Uniswap V3 WETH/USDC 0.05% on Base mainnet.
  *
  * Every value here was read from chain, not copied from docs or memory.
- * See docs/architecture (S2) section 0 for the verification record.
+ * See REQUIREMENTS.md §0 for the verification record.
  *
  * CRITICAL — token order:
  *   token0 = WETH (18 decimals)

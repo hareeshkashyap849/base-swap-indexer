@@ -258,11 +258,15 @@ npm run index:follow              backfill, then keep polling
 src/indexer/     chunker (adaptive sizing) · indexer (fetch, decode, reorg) · cli
 src/lib/         price maths · RPC pool · SQLite store · read queries
 src/api/         fastify server and routes
-dashboard/       single-file zero-build dashboard
-web/             React + Vite dashboard
+dashboard/       single-file zero-build dashboard (what the API serves)
+web/             React + Vite dashboard (see known limitations)
 test/            49 cases, no network, no shared state
-docs/            requirements spec (S0) and architecture (S2)
+tools/           config and lifecycle checkers
 verify-data.ts   data audit run against a populated database
+
+REQUIREMENTS.md  scope, acceptance criteria, verified facts, deviations
+ARCHITECTURE.md  component design, decisions, price maths, invariants
+TESTING.md       how to verify this project
 ```
 
 ---
@@ -300,14 +304,16 @@ Stated plainly, because a portfolio project that claims none is not credible:
 
 - [`TESTING.md`](TESTING.md) — how to verify this project, in four levels, plus
   what is deliberately **not** covered
-- [`docs/01-requirements-spec.md`](docs/01-requirements-spec.md) — scope, acceptance
-  criteria, explicit non-goals
-- [`docs/02-architecture.md`](docs/02-architecture.md) — component design, CROPS
-  review, frozen decisions with rejected alternatives, failure-mode analysis,
-  invariant definitions
+- [`REQUIREMENTS.md`](REQUIREMENTS.md) — verified facts about the pool and the
+  RPC endpoints, scope, acceptance criteria, explicit non-goals, and where the
+  implementation deviates from the original specification
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — component design, trust boundary,
+  frozen decisions with rejected alternatives, the price derivation, the
+  invariants the tests encode, failure-mode analysis
 
-These are written in Chinese: they are working documents, and the reasoning in
-them was done in the author's first language.
+The working notes these were distilled from were written in Chinese; these
+versions are in English so that a reviewer who does not read Chinese gets the
+same content rather than a gap.
 
 ---
 
