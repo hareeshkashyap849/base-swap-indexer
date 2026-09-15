@@ -16,7 +16,7 @@
     "build": "tsc --noEmit && vite build --config web/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --experimental-strip-types test/chunker.test.ts && node --no-warnings --experimental-strip-types test/price.test.ts && node --no-warnings --experimental-strip-types test/api.test.ts",
-    "smoke:dashboard": "node --no-warnings --experimental-strip-types tools/smoke-dashboard.ts",
+    "smoke:dashboard": "node --no-warnings --experimental-strip-types tools/smoke-dashboard.ts && node --no-warnings tools/check-dashboard.mjs .",
     "verify": "npm run typecheck && npm test"
   },
   "dependencies": {
