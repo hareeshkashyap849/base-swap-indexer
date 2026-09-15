@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WETH/USDC swaps on Base — indexer dashboard</title>
+<meta name="description" content="Dashboard over indexed Uniswap V3 WETH/USDC swaps on Base mainnet: price, volume and trade history from a self-hosted event indexer." />
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121820; --line:#1d2733; --line2:#24313d;
+    --text:#e6edf3; --muted:#8b98a5; --dim:#5c6b7a;
+    --accent:#4ea1ff; --up:#3fb950; --down:#f85149; --warn:#f0a020; --vol:#2f6f5e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 64px}
+  h1{font-size:21px;margin:0;font-weight:600;letter-spacing:-.2px}
+  h2{font-size:14px;margin:0;font-weight:600}
+  .sub{color:var(--muted);margin:6px 0 0;font-size:13px}
+  .strip{display:flex;gap:18px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);
+    padding:7px 12px;background:#101720;border:1px solid var(--line);border-radius:7px;margin:18px 0 20px}
+  .strip strong{color:#c9d4de;font-variant-numeric:tabular-nums}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:22px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .kpi .l{font-size:11px;color:#7d8b99;text-transform:uppercase;letter-spacing:.6px}
+  .kpi .v{font-size:21px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .s{font-size:11.5px;margin-top:2px;color:var(--muted)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px 14px;margin-bottom:18px}
+  .panel-head{display:flex;justify-content:space-between;align-items:baseline;
+    gap:14px;flex-wrap:wrap;margin-bottom:10px}
+  .panel-sub{font-size:11.5px;color:#7d8b99;margin-top:2px}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+  .seg button{background:transparent;color:var(--muted);border:0;padding:4px 10px;
+    font-size:11.5px;cursor:pointer;font-family:inherit}
+  .seg button[aria-pressed="true"]{background:#1f2b38;color:var(--text)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{padding:6px 8px;font-weight:500;font-size:11px;color:#7d8b99;text-transform:uppercase;
+    letter-spacing:.5px;text-align:left;white-space:nowrap}
+  th.r,td.r{text-align:right}
+  td{padding:6px 8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  tbody tr{border-top:1px solid #1a232d}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .buy{color:var(--up);font-weight:600}
+  .sell{color:var(--down);font-weight:600}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .ph{padding:36px 0;text-align:center;color:var(--dim);font-size:12.5px}
+  .err{background:#2d1416;border:1px solid #5c2027;color:#ffb4ab;padding:12px 14px;
+    border-radius:8px;margin-bottom:18px;font-size:13px}
+  .err .hint{color:#c99;margin-top:4px}
+  footer{margin-top:26px;color:var(--dim);font-size:11.5px;line-height:1.7}
+  canvas{display:block;width:100%}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:8px}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>WETH/USDC swaps on Base</h1>
+    <p class="sub" id="lede">Uniswap V3 0.05% pool, indexed from chain by a self-hosted event indexer.</p>
+  </header>
+
+  <div class="strip" id="strip" hidden></div>
+  <div id="error" hidden></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Price</h2>
+        <div class="panel-sub" id="priceSub">close price, USDC per WETH</div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div class="seg" id="segInterval"></div>
+        <div class="seg" id="segWindow"></div>
+      </div>
+    </div>
+    <canvas id="priceCanvas" height="280" role="img"
+      aria-label="Line chart of pool price over time"></canvas>
+    <div class="legend"><span><i class="sw" style="background:var(--accent)"></i>close price</span></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Volume</h2>
+        <div class="panel-sub" id="volSub">USDC traded per candle</div>
+      </div>
+    </div>
+    <canvas id="volCanvas" height="150" role="img"
+      aria-label="Bar chart of traded volume over time"></canvas>
+    <div class="legend"><span><i class="sw" style="background:var(--vol)"></i>volume (USDC)</span></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Recent trades</h2>
+        <div class="panel-sub" id="tradesSub">newest first</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>time (UTC)</th><th>side</th><th class="r">WETH</th><th class="r">USDC</th>
+          <th class="r">price</th><th>recipient</th><th>tx</th>
+        </tr></thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <div>
+      Read from a local SQLite database populated by this project's indexer. Prices come from the pool's
+      <code>sqrtPriceX96</code> with decimals corrected for WETH (18) and USDC (6), and are cross-checked
+      against the independently derived <code>tick</code> on every row.
+    </div>
+    <div style="margin-top:6px">
+      Read-only public data. No wallet connection, no transactions, not investment advice.
+    </div>
+  </footer>
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+ * Dependency-free dashboard.
+ *
+ * Deliberately a single file with no build step and no framework. The React app
+ * under web/ is the primary implementation, but requiring `npm install` plus a
+ * bundler before anyone can see the output raises the cost of looking at this
+ * project for no benefit: what matters here is that the API returns real data,
+ * and that is visible in one click. Charts are hand-drawn on <canvas> for the
+ * same reason — a charting library would be a second dependency for two series.
+ * ------------------------------------------------------------------------- */
+
+var INTERVALS = ['1m','5m','15m','1h','4h','1d'];
+var WINDOWS = [{l:'1h',h:1},{l:'4h',h:4},{l:'6h',h:6},{l:'24h',h:24},{l:'7d',h:168}];
+
+var state = { interval:'5m', hours:6, candles:[], autoTimer:null };
+
+function $(id){ return document.getElementById(id); }
+
+function compact(n){
+  if(!isFinite(n)) return '—';
+  var a=Math.abs(n);
+  if(a>=1e9) return (n/1e9).toFixed(2)+'B';
+  if(a>=1e6) return (n/1e6).toFixed(2)+'M';
+  if(a>=1e3) return (n/1e3).toFixed(1)+'K';
+  return n.toFixed(2);
+}
+function short(h){ return h && h.length>12 ? h.slice(0,6)+'…'+h.slice(-4) : h; }
+function utc(ts){ return new Date(ts*1000).toISOString().replace('T',' ').slice(0,16); }
+function hhmm(ts){ return new Date(ts*1000).toISOString().slice(11,16); }
+function hms(ts){ return new Date(ts*1000).toISOString().slice(11,19); }
+
+function getJSON(url){
+  return fetch(url,{headers:{accept:'application/json'}}).then(function(r){
+    return r.text().then(function(t){
+      var body;
+      try { body = JSON.parse(t); } catch(e){ body = null; }
+      if(!r.ok){
+        var msg = (body && (body.message||body.error)) || (r.status+' '+r.statusText);
+        throw new Error(msg);
+      }
+      return body;
+    });
+  });
+}
+
+/* --- segmented controls ------------------------------------------------- */
+function buildSegments(){
+  var si = $('segInterval');
+  INTERVALS.forEach(function(v){
+    var b=document.createElement('button');
+    b.textContent=v; b.setAttribute('aria-pressed', String(v===state.interval));
+    b.onclick=function(){ state.interval=v; buildSegments(); load(); };
+    si.appendChild(b);
+  });
+  var sw = $('segWindow');
+  WINDOWS.forEach(function(w){
+    var b=document.createElement('button');
+    b.textContent=w.l; b.setAttribute('aria-pressed', String(w.h===state.hours));
+    b.onclick=function(){ state.hours=w.h; buildSegments(); load(); };
+    sw.appendChild(b);
+  });
+}
+
+/* --- canvas charting ---------------------------------------------------- */
+function setupCanvas(cv){
+  var dpr = window.devicePixelRatio || 1;
+  var cssW = cv.clientWidth || 900;
+  var cssH = parseInt(cv.getAttribute('height'),10) || 200;
+  cv.width = Math.round(cssW*dpr);
+  cv.height = Math.round(cssH*dpr);
+  cv.style.height = cssH+'px';
+  var ctx = cv.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+  return {ctx:ctx,w:cssW,h:cssH};
+}
+
+function axes(ctx,w,h,pad){
+  ctx.strokeStyle='#1d2733'; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(var i=0;i<=4;i++){
+    var y = pad.t + (h-pad.t-pad.b)*(i/4);
+    ctx.moveTo(pad.l, y+0.5); ctx.lineTo(w-pad.r, y+0.5);
+  }
+  ctx.stroke();
+}
+
+function drawPrice(points){
+  var cv = $('priceCanvas');
+  var s = setupCanvas(cv), ctx=s.ctx, w=s.w, h=s.h;
+  var pad = {l:62,r:12,t:10,b:22};
+  if(points.length===0){ emptyNote(ctx,w,h,'no candles in this window'); return; }
+  axes(ctx,w,h,pad);
+
+  var vals = points.map(function(p){return p.price;});
+  var min = Math.min.apply(null,vals), max = Math.max.apply(null,vals);
+  var span = (max-min) || max*0.001 || 1;
+  min -= span*0.12; max += span*0.12;
+  var plotW = w-pad.l-pad.r, plotH = h-pad.t-pad.b;
+  function X(i){ return pad.l + plotW*(points.length===1?0.5:i/(points.length-1)); }
+  function Y(v){ return pad.t + plotH*(1-(v-min)/(max-min)); }
+
+  /* horizontal gridline labels */
+  ctx.fillStyle='#5c6b7a'; ctx.font='10px ui-monospace,monospace'; ctx.textAlign='right';
+  for(var i=0;i<=4;i++){
+    var v = min + (max-min)*(1-i/4);
+    ctx.fillText(v.toFixed(1), pad.l-8, pad.t + plotH*(i/4)+3);
+  }
+
+  /* area fill */
+  var grad = ctx.createLinearGradient(0,pad.t,0,pad.t+plotH);
+  grad.addColorStop(0,'rgba(78,161,255,0.30)');
+  grad.addColorStop(1,'rgba(78,161,255,0.02)');
+  ctx.beginPath();
+  ctx.moveTo(X(0), Y(points[0].price));
+  for(var i=1;i<points.length;i++) ctx.lineTo(X(i), Y(points[i].price));
+  ctx.lineTo(X(points.length-1), pad.t+plotH);
+  ctx.lineTo(X(0), pad.t+plotH);
+  ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+
+  /* line */
+  ctx.beginPath();
+  ctx.moveTo(X(0), Y(points[0].price));
+  for(var j=1;j<points.length;j++) ctx.lineTo(X(j), Y(points[j].price));
+  ctx.strokeStyle='#4ea1ff'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+
+  /* x labels: first, middle, last */
+  ctx.fillStyle='#5c6b7a'; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='left';  ctx.fillText(hhmm(points[0].ts), pad.l, h-6);
+  ctx.textAlign='right'; ctx.fillText(hhmm(points[points.length-1].ts), w-pad.r, h-6);
+  if(points.length>2){
+    var m = Math.floor(points.length/2);
+    ctx.textAlign='center'; ctx.fillText(hhmm(points[m].ts), X(m), h-6);
+  }
+}
+
+function drawVolume(points){
+  var cv = $('volCanvas');
+  var s = setupCanvas(cv), ctx=s.ctx, w=s.w, h=s.h;
+  var pad = {l:62,r:12,t:10,b:22};
+  if(points.length===0){ emptyNote(ctx,w,h,'no volume in this window'); return; }
+  axes(ctx,w,h,pad);
+
+  var maxV = Math.max.apply(null, points.map(function(p){return p.volume;}));
+  if(!(maxV>0)) maxV=1;
+  var plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
+  var bw = Math.max(1, Math.min(18, plotW/points.length*0.72));
+
+  for(var i=0;i<points.length;i++){
+    var x = pad.l + plotW*((i+0.5)/points.length) - bw/2;
+    var bh = plotH * (points[i].volume/maxV);
+    ctx.fillStyle='#2f6f5e';
+    ctx.fillRect(x, pad.t+plotH-bh, bw, bh);
+  }
+  ctx.fillStyle='#5c6b7a'; ctx.font='10px ui-monospace,monospace'; ctx.textAlign='right';
+  for(var k=0;k<=4;k++){
+    ctx.fillText(compact(maxV*(1-k/4)), pad.l-8, pad.t + plotH*(k/4)+3);
+  }
+  ctx.textAlign='left';  ctx.fillText(hhmm(points[0].ts), pad.l, h-6);
+  ctx.textAlign='right'; ctx.fillText(hhmm(points[points.length-1].ts), w-pad.r, h-6);
+}
+
+function emptyNote(ctx,w,h,text){
+  ctx.fillStyle='#5c6b7a'; ctx.font='12.5px ui-sans-serif,system-ui';
+  ctx.textAlign='center'; ctx.fillText(text, w/2, h/2);
+}
+
+/* --- renderers ---------------------------------------------------------- */
+function renderStrip(h){
+  var el = $('strip');
+  if(!h){ el.hidden=true; return; }
+  el.hidden=false;
+  var stale = h.lag!==null && h.lag>300;
+  var parts = [
+    ['last indexed block', h.lastIndexedBlock!=null ? h.lastIndexedBlock.toLocaleString() : '—'],
+    ['chain head', h.chainHead!=null ? h.chainHead.toLocaleString() : 'unavailable'],
+    ['lag', h.lag===null ? 'unknown' : h.lag+' blocks'],
+    ['swaps stored', (h.swaps||0).toLocaleString()]
+  ];
+  el.innerHTML = parts.map(function(p,i){
+    var color = (i===2 && stale) ? 'var(--warn)' : (i===2 ? 'var(--up)' : '#c9d4de');
+    return '<span>'+p[0]+' <strong style="color:'+color+'">'+p[1]+'</strong></span>';
+  }).join('');
+}
+
+function kpi(label,value,sub,color){
+  return '<div class="kpi"><div class="l">'+label+'</div><div class="v">'+value+'</div>'+
+    (sub?'<div class="s"'+(color?' style="color:'+color+'"':'')+'>'+sub+'</div>':'')+'</div>';
+}
+
+function renderKpis(s){
+  var tone = s.changePct>0 ? 'var(--up)' : s.changePct<0 ? 'var(--down)' : 'var(--muted)';
+  var change = s.changePct!==0 ? (s.changePct*100).toFixed(2)+'%' : '';
+  $('kpis').innerHTML =
+    kpi('Price', s.priceNow>0 ? '$'+s.priceNow.toFixed(2) : '—', change, tone) +
+    kpi('VWAP', s.vwap>0 ? '$'+s.vwap.toFixed(2) : '—', 'volume weighted') +
+    kpi('Volume', '$'+compact(s.volumeUsdc), 'in '+s.windowHours+'h') +
+    kpi('Trades', (s.trades||0).toLocaleString(), 'swap events') +
+    kpi('Unique recipients', (s.uniqueTraders||0).toLocaleString(), 'distinct addresses') +
+    kpi('Range', s.high>0 ? s.low.toFixed(0)+'–'+s.high.toFixed(0) : '—', 'low–high');
+}
+
+function renderTrades(swaps){
+  var body = $('tradesBody');
+  $('tradesSub').textContent = 'latest '+swaps.length+' swap events, newest first';
+  if(!swaps.length){
+    body.innerHTML = '<tr><td colspan="7" class="ph">no swaps indexed yet — run `npm run index`</td></tr>';
+    return;
+  }
+  body.innerHTML = swaps.map(function(s){
+    return '<tr>'+
+      '<td class="mono">'+hms(s.timestamp)+'</td>'+
+      '<td class="'+s.action+'">'+s.action+'</td>'+
+      '<td class="r mono">'+Math.abs(s.amount0).toFixed(4)+'</td>'+
+      '<td class="r mono">'+Math.abs(s.amount1).toFixed(2)+'</td>'+
+      '<td class="r mono">$'+s.price.toFixed(2)+'</td>'+
+      '<td class="mono" title="'+s.recipient+'">'+short(s.recipient)+'</td>'+
+      '<td class="mono"><a href="https://basescan.org/tx/'+s.txHash+'" target="_blank" rel="noreferrer noopener"'+
+      ' title="'+s.txHash+'">'+short(s.txHash)+'</a></td>'+
+    '</tr>';
+  }).join('');
+}
+
+/* --- load --------------------------------------------------------------- */
+function setError(msg){
+  var el=$('error');
+  if(!msg){ el.hidden=true; el.innerHTML=''; return; }
+  el.hidden=false;
+  el.innerHTML='<div class="err"><strong>API error:</strong> '+msg+
+    '<div class="hint">Start it with <code>npm run api</code> (serves http://127.0.0.1:3001), '+
+    'or open this page through the API at <code>http://127.0.0.1:3001/</code>.</div></div>';
+}
+
+function load(){
+  $('priceSub').textContent = state.interval+' candles · last '+state.hours+'h · close price, USDC per WETH';
+  $('volSub').textContent = 'USDC traded per '+state.interval+' candle';
+
+  Promise.all([
+    getJSON('/api/stats?hours='+state.hours),
+    getJSON('/api/ohlcv?interval='+state.interval+'&hours='+state.hours),
+    getJSON('/api/swaps?limit=40'),
+    getJSON('/api/health')
+  ]).then(function(res){
+    setError(null);
+    var stats=res[0], ohlcv=res[1], swaps=res[2], health=res[3];
+    renderStrip(health);
+    renderKpis(stats);
+    state.candles = ohlcv.candles || [];
+    drawPrice(state.candles);
+    drawVolume(state.candles);
+    renderTrades(swaps.swaps || []);
+    $('lede').textContent = 'Uniswap V3 0.05% pool, indexed from chain by a self-hosted event indexer. '+
+      (health.swaps||0).toLocaleString()+' swaps stored.';
+  }).catch(function(e){
+    setError(e.message);
+  });
+}
+
+window.addEventListener('resize', function(){
+  if(state.candles.length){ drawPrice(state.candles); drawVolume(state.candles); }
+});
+
+buildSegments();
+load();
+state.autoTimer = setInterval(load, 15000);
+</script>
+</body>
+</html>

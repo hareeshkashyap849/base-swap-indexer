@@ -82,14 +82,24 @@ async function withServer(fn: (h: Harness) => Promise<void>): Promise<void> {
   }
 }
 
-test('GET / describes the service', async () => {
+test('GET / serves the dashboard when present, or describes the API when not', async () => {
   await withServer(async ({ app }) => {
     const res = await app.inject({ method: 'GET', url: '/' });
     assert.equal(res.statusCode, 200);
-    const body = res.json();
-    assert.equal(body.pair, 'WETH/USDC');
-    assert.equal(body.chainId, 8453);
-    assert.ok(Array.isArray(body.endpoints));
+    // Two acceptable shapes:
+    //   - dashboard/index.html exists  -> HTML (the normal case)
+    //   - partial checkout, no file    -> JSON service description
+    // Asserting only one of them would make the suite depend on which files the
+    // person running it happened to check out.
+    if (res.headers['content-type']?.includes('text/html')) {
+      assert.match(res.body, /<!doctype html>/i);
+      assert.match(res.body, /<title>[^<]*WETH\/USDC[^<]*<\/title>/i);
+    } else {
+      const body = res.json();
+      assert.equal(body.pair, 'WETH/USDC');
+      assert.equal(body.chainId, 8453);
+      assert.ok(Array.isArray(body.endpoints));
+    }
   });
 });
 

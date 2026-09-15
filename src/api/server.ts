@@ -17,6 +17,10 @@
 
 import Fastify from 'fastify';
 import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Repo } from '../lib/repo.ts';
 import { RpcPool } from '../lib/rpc.ts';
 import { POOL_ADDRESS, SYMBOL0, SYMBOL1, FEE } from '../config.ts';
@@ -31,6 +35,24 @@ const ALLOWED_INTERVALS: Record<string, number> = {
   '4h': 14_400,
   '1d': 86_400,
 };
+
+/**
+ * Read the dashboard once at module load.
+ *
+ * It is a single self-contained file, so there is nothing to resolve per
+ * request; reading it eagerly keeps the request path free of I/O and makes a
+ * missing file an obvious startup-time fact rather than a per-request surprise.
+ */
+const DASHBOARD_HTML: { content: string; exists: boolean } = (() => {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    // src/api -> project root -> dashboard/index.html
+    const p = join(here, '..', '..', 'dashboard', 'index.html');
+    return existsSync(p) ? { content: readFileSync(p, 'utf8'), exists: true } : { content: '', exists: false };
+  } catch {
+    return { content: '', exists: false };
+  }
+})();
 
 export interface ServerOptions {
   dbPath?: string;
@@ -93,14 +115,29 @@ export function buildServer(opts: ServerOptions = {}): {
     return payload;
   });
 
-  app.get('/', async () => ({
-    name: 'base-swap-indexer',
-    pool: POOL_ADDRESS,
-    pair: `${SYMBOL0}/${SYMBOL1}`,
-    feeBps: FEE,
-    chainId: 8453,
-    endpoints: ['/api/health', '/api/swaps', '/api/ohlcv', '/api/stats'],
-  }));
+  app.get('/', async (_req, reply) => {
+    // Serve the bundled single-file dashboard when it is present.
+    //
+    // The dashboard is three static files' worth of markup in ONE html file with
+    // no build step, so serving it is a readFileSync rather than a static-file
+    // plugin plus a dependency. Opening http://127.0.0.1:3001/ then shows real
+    // data with no npm install, no bundler and no toolchain — which matters
+    // because the first thing a reviewer does is try to look at the output.
+    if (DASHBOARD_HTML.exists) {
+      reply.header('content-type', 'text/html; charset=utf-8');
+      return DASHBOARD_HTML.content;
+    }
+    // Dashboard missing (e.g. a partial checkout): still describe the API.
+    return {
+      name: 'base-swap-indexer',
+      pool: POOL_ADDRESS,
+      pair: `${SYMBOL0}/${SYMBOL1}`,
+      feeBps: FEE,
+      chainId: 8453,
+      note: 'dashboard/index.html not found; API endpoints are available below',
+      endpoints: ['/api/health', '/api/swaps', '/api/ohlcv', '/api/stats'],
+    };
+  });
 
   app.get('/api/health', async () => {
     const state = db
@@ -260,6 +297,13 @@ async function main(): Promise<void> {
 }
 
 // Only auto-start when run directly, so tests can import buildServer.
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {
+//
+// The obvious `import.meta.url === \`file://${process.argv[1]}\`` check is
+// wrong on Windows: argv[1] is `D:\path\server.ts` while import.meta.url is
+// `file:///D:/path/server.ts` (three slashes, and a different drive-letter
+// case). The comparison silently fails, main() never runs, and the process
+// exits 0 with no output — which is exactly how this shipped once already.
+// pathToFileURL does the mapping correctly on every platform.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void main();
 }
