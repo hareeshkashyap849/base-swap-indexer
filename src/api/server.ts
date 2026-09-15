@@ -37,22 +37,32 @@ const ALLOWED_INTERVALS: Record<string, number> = {
 };
 
 /**
- * Read the dashboard once at module load.
+ * Locate the dashboard file.
  *
- * It is a single self-contained file, so there is nothing to resolve per
- * request; reading it eagerly keeps the request path free of I/O and makes a
- * missing file an obvious startup-time fact rather than a per-request surprise.
+ * The contents are deliberately NOT cached. An earlier version read the file
+ * once at module load and served that string forever, which meant editing the
+ * dashboard changed nothing until the API was restarted — a stale-code trap
+ * that cost real debugging time (the fix appeared not to work because the
+ * running server was still serving the old page).
+ *
+ * Re-reading per request is the right trade here. The file is ~20 KB, it is
+ * served to one person running this locally, and the alternative is a class of
+ * bug where your edits silently do not apply. Correctness over a micro-optimism
+ * nobody can measure.
  */
-const DASHBOARD_HTML: { content: string; exists: boolean } = (() => {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    // src/api -> project root -> dashboard/index.html
-    const p = join(here, '..', '..', 'dashboard', 'index.html');
-    return existsSync(p) ? { content: readFileSync(p, 'utf8'), exists: true } : { content: '', exists: false };
-  } catch {
-    return { content: '', exists: false };
-  }
+const DASHBOARD_PATH: string = (() => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  // src/api -> project root -> dashboard/index.html
+  return join(here, '..', '..', 'dashboard', 'index.html');
 })();
+
+function readDashboard(): string | null {
+  try {
+    return existsSync(DASHBOARD_PATH) ? readFileSync(DASHBOARD_PATH, 'utf8') : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface ServerOptions {
   dbPath?: string;
@@ -118,14 +128,18 @@ export function buildServer(opts: ServerOptions = {}): {
   app.get('/', async (_req, reply) => {
     // Serve the bundled single-file dashboard when it is present.
     //
-    // The dashboard is three static files' worth of markup in ONE html file with
-    // no build step, so serving it is a readFileSync rather than a static-file
-    // plugin plus a dependency. Opening http://127.0.0.1:3001/ then shows real
-    // data with no npm install, no bundler and no toolchain — which matters
-    // because the first thing a reviewer does is try to look at the output.
-    if (DASHBOARD_HTML.exists) {
+    // The dashboard is one self-contained HTML file with no build step, so
+    // serving it is a readFileSync rather than a static-file plugin plus a
+    // dependency. Opening http://127.0.0.1:3001/ then shows real data with no
+    // npm install, no bundler and no toolchain — which matters because the
+    // first thing a reviewer does is try to look at the output.
+    const dashboard = readDashboard();
+    if (dashboard !== null) {
       reply.header('content-type', 'text/html; charset=utf-8');
-      return DASHBOARD_HTML.content;
+      // Edits take effect on refresh; no restart required, and no stale copy
+      // can be served from a browser cache either.
+      reply.header('cache-control', 'no-store');
+      return dashboard;
     }
     // Dashboard missing (e.g. a partial checkout): still describe the API.
     return {
