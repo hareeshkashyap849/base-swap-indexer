@@ -157,6 +157,20 @@ function short(h){ return h && h.length>12 ? h.slice(0,6)+'…'+h.slice(-4) : h;
 function utc(ts){ return new Date(ts*1000).toISOString().replace('T',' ').slice(0,16); }
 function hhmm(ts){ return new Date(ts*1000).toISOString().slice(11,16); }
 function hms(ts){ return new Date(ts*1000).toISOString().slice(11,19); }
+function mmdd(ts){ return new Date(ts*1000).toISOString().slice(5,10); }
+
+/* Axis label formatting has to depend on the bucket size.
+ *
+ * With a coarse interval every candle lands on a round boundary — a 1d bucket
+ * is always 00:00, a 4h bucket is always 00:00/04:00/08:00... So a bare
+ * HH:MM label printed the same string two or three times across the axis
+ * ("00:00 ... 00:00"), which reads as a broken time axis even though the data
+ * and the chart are both fine. Coarse buckets therefore label by date.
+ */
+function timeLabel(ts){
+  var secs = { '1m':60, '5m':300, '15m':900, '1h':3600, '4h':14400, '1d':86400 }[state.interval] || 0;
+  return secs >= 14400 ? mmdd(ts) : hhmm(ts);
+}
 
 function getJSON(url){
   return fetch(url,{headers:{accept:'application/json'}}).then(function(r){
@@ -290,13 +304,33 @@ function drawPrice(points){
   for(var j=1;j<points.length;j++) ctx.lineTo(X(j), Y(points[j].price));
   ctx.strokeStyle='#4ea1ff'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
 
-  /* x labels: first, middle, last */
+  /* A single bucket draws a one-pixel line segment, which is invisible. With
+   * one data point there is nothing to connect, so mark it instead of drawing
+   * a line nobody can see. This is reachable: interval 1d over a 6h window on a
+   * chain with 5.5h of indexed history yields exactly one candle. */
+  if(points.length === 1){
+    ctx.beginPath();
+    ctx.arc(X(0), Y(points[0].price), 3.5, 0, Math.PI*2);
+    ctx.fillStyle='#4ea1ff';
+    ctx.fill();
+  }
+
+  /* x labels: first and last, plus the middle only when it adds information.
+   * With a single bucket all three would be identical, so print one. */
   ctx.fillStyle='#5c6b7a'; ctx.font='10px ui-monospace,monospace';
-  ctx.textAlign='left';  ctx.fillText(hhmm(points[0].ts), pad.l, h-6);
-  ctx.textAlign='right'; ctx.fillText(hhmm(points[points.length-1].ts), w-pad.r, h-6);
+  var firstLabel = timeLabel(points[0].ts);
+  ctx.textAlign='left';
+  ctx.fillText(firstLabel, pad.l, h-6);
   if(points.length>2){
+    var lastLabel = timeLabel(points[points.length-1].ts);
+    ctx.textAlign='right';
+    ctx.fillText(lastLabel, w-pad.r, h-6);
     var m = Math.floor(points.length/2);
-    ctx.textAlign='center'; ctx.fillText(hhmm(points[m].ts), X(m), h-6);
+    var midLabel = timeLabel(points[m].ts);
+    if(midLabel !== firstLabel && midLabel !== lastLabel){
+      ctx.textAlign='center';
+      ctx.fillText(midLabel, X(m), h-6);
+    }
   }
 }
 
@@ -324,8 +358,8 @@ function drawVolume(points){
   for(var k=0;k<=4;k++){
     ctx.fillText(compact(maxV*(1-k/4)), pad.l-8, pad.t + plotH*(k/4)+3);
   }
-  ctx.textAlign='left';  ctx.fillText(hhmm(points[0].ts), pad.l, h-6);
-  ctx.textAlign='right'; ctx.fillText(hhmm(points[points.length-1].ts), w-pad.r, h-6);
+  ctx.textAlign='left';  ctx.fillText(timeLabel(points[0].ts), pad.l, h-6);
+  ctx.textAlign='right'; ctx.fillText(timeLabel(points[points.length-1].ts), w-pad.r, h-6);
 }
 
 function emptyNote(ctx,w,h,text){
