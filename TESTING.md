@@ -110,12 +110,33 @@ npm run api          # serves http://127.0.0.1:3001
 
 1. **The price is plausible** (low thousands, not `0.0004`) — this is the
    direction check, visible without reading any code.
-2. **The freshness strip reports a small lag.** A large or growing lag means the
+2. **Both charts actually have pixels in them.** An empty chart panel is the
+   failure mode this project has already shipped once: the chart code read
+   `.price`/`.volume` from candle objects that only had `.close`/`.volumeUsdc`,
+   so every Y coordinate became `NaN`. Canvas accepts `NaN` silently, so the
+   panel rendered blank with no error anywhere. If a chart looks empty, run the
+   smoke test below rather than assuming there is no data.
+3. **The freshness strip reports a small lag.** A large or growing lag means the
    indexer is behind, and the UI says so rather than hiding it.
-3. **Buy and sell both appear** in the trade table. A one-sided table means the
+4. **Buy and sell both appear** in the trade table. A one-sided table means the
    sign convention was misread.
-4. **The freshness strip is honest**: if you stop the indexer and wait, `lag`
+5. **The freshness strip is honest**: if you stop the indexer and wait, `lag`
    grows. Data that silently stays "fresh" would be a bug.
+
+### Automated dashboard check
+
+```bash
+npm run api &
+npm run smoke:dashboard
+```
+
+This renders the dashboard's real inline script against a minimal DOM shim and
+the live API, records every canvas operation, and fails on degenerate geometry:
+non-finite coordinates, zero-height bars, or a price line with no vertical
+spread. It exits non-zero on failure and runs in CI.
+
+It is the only check that covers the class of bug described in point 2 above,
+and it exists because that bug reached a running dashboard.
 
 ---
 

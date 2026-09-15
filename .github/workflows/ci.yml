@@ -25,5 +25,31 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Typecheck and test
+      - name: Typecheck and unit tests
         run: npm run verify
+
+      # The dashboard smoke test is the only thing that covers a real gap: the
+      # chart code once read fields that did not exist on the API's candle
+      # objects, so every Y coordinate became NaN and both charts silently drew
+      # nothing — no exception, no console error. Typechecking cannot see it
+      # (the page is plain JS inside HTML) and neither can the unit tests, so it
+      # needs a job that actually renders the page against a live API.
+      - name: Backfill a small window
+        run: npm run index -- --blocks 300
+
+      - name: Start API
+        run: |
+          npm run api > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3001/api/health > /dev/null; then
+              echo "API is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not start in time; log follows"
+          cat /tmp/api.log
+          exit 1
+
+      - name: Dashboard smoke test
+        run: npm run smoke:dashboard

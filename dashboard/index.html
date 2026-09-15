@@ -190,6 +190,37 @@ function buildSegments(){
   });
 }
 
+/* --- normalisation -------------------------------------------------------
+ * The API returns candles shaped { ts, open, high, low, close, volumeUsdc, trades }.
+ * The drawing functions below want { ts, price, volume }.
+ *
+ * This conversion used to be missing — the raw API objects were handed
+ * straight to the chart code, which read `.price` and `.volume`. Both were
+ * undefined, so every Y coordinate became NaN and both charts silently drew
+ * nothing. No exception, no console error, just an empty panel: the worst
+ * failure mode available, because nothing tells you the data is missing.
+ *
+ * So the mapping now exists, AND it validates. A shape mismatch throws with the
+ * offending field named, instead of producing an invisible chart.
+ * ------------------------------------------------------------------------ */
+function normaliseCandles(raw){
+  if(!Array.isArray(raw)) throw new Error('ohlcv response has no candles array');
+  return raw.map(function(c, i){
+    if(c == null) throw new Error('candle '+i+' is null');
+    // The numeric price for a candle is its close. Fall back to open only if
+    // close is genuinely absent, and reject non-finite values outright.
+    var price = c.close ?? c.open;
+    var volume = c.volumeUsdc ?? c.volume;
+    if(typeof price !== 'number' || !isFinite(price))
+      throw new Error('candle '+i+' has no finite close/open (got '+JSON.stringify(c.close)+' / '+JSON.stringify(c.open)+')');
+    if(typeof volume !== 'number' || !isFinite(volume))
+      throw new Error('candle '+i+' has no finite volumeUsdc (got '+JSON.stringify(c.volumeUsdc)+')');
+    if(typeof c.ts !== 'number' || !isFinite(c.ts))
+      throw new Error('candle '+i+' has no finite ts');
+    return { ts:c.ts, price:price, volume:volume, trades:c.trades };
+  });
+}
+
 /* --- canvas charting ---------------------------------------------------- */
 function setupCanvas(cv){
   var dpr = window.devicePixelRatio || 1;
@@ -223,6 +254,12 @@ function drawPrice(points){
 
   var vals = points.map(function(p){return p.price;});
   var min = Math.min.apply(null,vals), max = Math.max.apply(null,vals);
+  if(!isFinite(min) || !isFinite(max)){
+    // Second line of defence. If a caller ever bypasses normaliseCandles, fail
+    // loudly here rather than emitting NaN coordinates, which canvas silently
+    // accepts and which produce a blank panel with no error anywhere.
+    throw new Error('drawPrice: non-finite price range (min='+min+', max='+max+') — is the candle shape wrong?');
+  }
   var span = (max-min) || max*0.001 || 1;
   min -= span*0.12; max += span*0.12;
   var plotW = w-pad.l-pad.r, plotH = h-pad.t-pad.b;
@@ -271,7 +308,9 @@ function drawVolume(points){
   axes(ctx,w,h,pad);
 
   var maxV = Math.max.apply(null, points.map(function(p){return p.volume;}));
-  if(!(maxV>0)) maxV=1;
+  if(!isFinite(maxV) || maxV<=0){
+    throw new Error('drawVolume: non-finite volume maximum ('+maxV+') — is the candle shape wrong?');
+  }
   var plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
   var bw = Math.max(1, Math.min(18, plotW/points.length*0.72));
 
@@ -374,7 +413,7 @@ function load(){
     var stats=res[0], ohlcv=res[1], swaps=res[2], health=res[3];
     renderStrip(health);
     renderKpis(stats);
-    state.candles = ohlcv.candles || [];
+    state.candles = normaliseCandles(ohlcv.candles || []);
     drawPrice(state.candles);
     drawVolume(state.candles);
     renderTrades(swaps.swaps || []);

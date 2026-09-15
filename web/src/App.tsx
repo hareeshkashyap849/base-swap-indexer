@@ -76,6 +76,10 @@ export function App(): React.ReactElement {
         ts: c.ts,
         time: new Date(c.ts * 1000).toISOString().slice(11, 16),
         fullTime: new Date(c.ts * 1000).toISOString().replace('T', ' ').slice(0, 16) + ' UTC',
+        // `close`, not `price`: the OHLCV endpoint returns open/high/low/close
+        // and has no `price` field. Reading a field that does not exist yields
+        // undefined, which poisons the whole Y scale with NaN and renders an
+        // empty chart without throwing.
         price: c.close,
         volume: c.volumeUsdc,
         trades: c.trades,

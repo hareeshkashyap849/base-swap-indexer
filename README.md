@@ -137,6 +137,21 @@ timestamp sanity: PASS
 INV-5 aggregation agreement: PASS   (JS 5682828.51 == SQL 5682828.51)
 ```
 
+And a headless smoke test for the dashboard, which needs the API running:
+
+```bash
+npm run api &
+npm run smoke:dashboard
+```
+
+It renders the dashboard's real script against a minimal DOM, records every
+canvas call, and asserts the geometry is not degenerate. That check exists
+because of a real bug: the chart code read `.price` and `.volume` from candles
+that only had `.close` and `.volumeUsdc`, so every Y coordinate was `NaN` and
+both charts silently drew nothing — no exception, no console error. Neither the
+typechecker nor the unit tests can see that, since the dashboard is plain JS
+inside an HTML page. It is now covered in CI.
+
 ### Invariants the tests encode
 
 | # | Invariant | Why it matters |
