@@ -262,15 +262,54 @@ for (const iv of intervals) {
   check(`interval ${iv}: axis labels are distinct`, !dup, labels.join(' '));
 }
 
-// --- layout stability across redraws ------------------------------------
-for (const iv of ['1m', '5m', '1m', '5m', '1m']) {
-  const btn = seg.children.find((c) => c.textContent === iv);
-  if (btn) {
-    btn.click();
-    await settle(1400);
+// --- control hygiene: the segmented buttons must not accumulate -----------
+//
+// buildSegments() is called on every interval/window change, and the first
+// version only appended to its container. So each click added another complete
+// row of buttons: clicking three intervals produced four sets, and the page grew
+// a new row every time. It was reported by a user as "the time buttons keep
+// increasing", which is exactly what it was.
+//
+// This checks the count, and the count of the *other* control too, since one
+// function builds both.
+console.log('\ncontrol hygiene');
+{
+  const intervalCount = seg.children.length;
+  const windowSeg = el('segWindow');
+  const windowCount = windowSeg.children.length;
+
+  check('interval control has exactly one button per interval', intervalCount === intervals.length, `${intervalCount} vs ${intervals.length}`);
+
+  /* Count the windows by parsing the WINDOWS array itself.
+   *
+   * A file-wide /l:'([^']+)'/ match does NOT work: it also hits the interval
+   * labels in timeLabel(), so it reported 6 windows where the array holds 5 and
+   * failed a control that was correct. Scope the match to the array. */
+  const windowsLiteral = html.match(/var WINDOWS = \[([^\]]+)\]/)?.[1] ?? '';
+  const expectedWindows = [...windowsLiteral.matchAll(/\{l:/g)].length;
+  check('window control has exactly one button per window', windowCount === expectedWindows, `${windowCount} vs ${expectedWindows}`);
+
+  // Now click around and make sure nothing accumulates.
+  for (const iv of ['1m', '5m', '1m', '1d', '5m']) {
+    const btn = seg.children.find((c) => c.textContent === iv);
+    if (btn) {
+      btn.click();
+      await settle(900);
+    }
   }
+  check(
+    'buttons do not accumulate after 5 interval changes',
+    seg.children.length === intervals.length,
+    `${seg.children.length} buttons, expected ${intervals.length}`,
+  );
+  check(
+    'window buttons do not accumulate either',
+    windowSeg.children.length === expectedWindows,
+    `${windowSeg.children.length} buttons, expected ${expectedWindows}`,
+  );
 }
 
+// --- layout stability across redraws ------------------------------------
 console.log('\nlayout stability across redraws');
 for (const [canvas, widths] of Object.entries(widthHistory)) {
   if (widths.length === 0) {

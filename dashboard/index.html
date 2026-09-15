@@ -191,19 +191,34 @@ function getJSON(url){
   });
 }
 
-/* --- segmented controls ------------------------------------------------- */
+/* --- segmented controls -------------------------------------------------
+ * Rebuilt on every change so the pressed state stays correct.
+ *
+ * The container MUST be emptied first. The original version only appended, so
+ * every click on an interval added another row of buttons to the page: three
+ * clicks produced four sets. Clearing is the whole fix; the rest is unchanged.
+ *
+ * innerHTML='' is safe here because these two containers hold nothing but the
+ * buttons this function creates.
+ * ----------------------------------------------------------------------- */
 function buildSegments(){
   var si = $('segInterval');
+  var sw = $('segWindow');
+  si.innerHTML = '';
+  sw.innerHTML = '';
+
   INTERVALS.forEach(function(v){
     var b=document.createElement('button');
-    b.textContent=v; b.setAttribute('aria-pressed', String(v===state.interval));
+    b.textContent=v;
+    b.setAttribute('aria-pressed', String(v===state.interval));
     b.onclick=function(){ state.interval=v; buildSegments(); load(); };
     si.appendChild(b);
   });
-  var sw = $('segWindow');
+
   WINDOWS.forEach(function(w){
     var b=document.createElement('button');
-    b.textContent=w.l; b.setAttribute('aria-pressed', String(w.h===state.hours));
+    b.textContent=w.l;
+    b.setAttribute('aria-pressed', String(w.h===state.hours));
     b.onclick=function(){ state.hours=w.h; buildSegments(); load(); };
     sw.appendChild(b);
   });
