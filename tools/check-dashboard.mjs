@@ -160,7 +160,20 @@ globalThis.document = {
   createElement: () => makeEl('x', panel),
 };
 globalThis.window = { devicePixelRatio: DPR, addEventListener: () => {} };
-globalThis.setInterval = () => 0;
+
+/* Capture the dashboard's own refresh timer instead of discarding it.
+ *
+ * Earlier versions of this harness stubbed setInterval to a no-op, which meant
+ * the auto-refresh path — the one that made the canvas grow every 15 seconds in
+ * real use — was never exercised. A timer that fires on its own is exactly the
+ * case where a layout feedback loop compounds, so the test has to be able to
+ * trigger it. */
+const timers = [];
+globalThis.setInterval = (fn, ms) => {
+  timers.push({ fn, ms });
+  return timers.length;
+};
+globalThis.clearInterval = () => {};
 
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -272,6 +285,42 @@ for (const [canvas, widths] of Object.entries(widthHistory)) {
 const cv = el('priceCanvas');
 check('CSS width pinned on the canvas', cv.style['width'] === '100%', `style.width=${JSON.stringify(cv.style['width'])}`);
 check('CSS height is a fixed positive px value', /^\d+px$/.test(cv.style['height'] ?? ''), `style.height=${JSON.stringify(cv.style['height'])}`);
+
+// --- the auto-refresh path -------------------------------------------------
+// The growth bug compounded once per refresh. Clicking controls also redraws,
+// so a control-driven test can pass while the timer-driven path still blows up.
+// Fire the captured timer several times and re-assert stability.
+console.log('\nauto-refresh path');
+check('the dashboard registered a refresh timer', timers.length > 0, timers.map((t) => `${t.ms}ms`).join(','));
+if (timers.length > 0) {
+  const beforeWidths = Object.fromEntries(
+    Object.entries(widthHistory).map(([k, v]) => [k, v[v.length - 1]]),
+  );
+  for (let i = 0; i < 4; i++) {
+    for (const t of timers) t.fn();
+    await settle(1500);
+  }
+  for (const [canvas, last] of Object.entries(beforeWidths)) {
+    const now = widthHistory[canvas][widthHistory[canvas].length - 1];
+    check(
+      `${canvas}: width stable across auto-refreshes`,
+      now <= last * 1.01,
+      `before=${last} after 4 refreshes=${now}`,
+    );
+    const max = Math.max(...widthHistory[canvas]);
+    check(
+      `${canvas}: never exceeded container x dpr`,
+      max <= CONTAINER_WIDTH * DPR * 1.01,
+      `max=${max} limit=${CONTAINER_WIDTH * DPR}`,
+    );
+  }
+  // The charts must still be drawing after all that, not degraded to blank.
+  const last = partitionDraws('priceCanvas').pop() ?? [];
+  const nonFinite = last
+    .filter((o) => o.op === 'moveTo' || o.op === 'lineTo')
+    .filter((o) => !Number.isFinite(o.args[0]) || !Number.isFinite(o.args[1])).length;
+  check('charts still draw correctly after auto-refreshes', last.length > 20 && nonFinite === 0, `${last.length} ops, ${nonFinite} NaN`);
+}
 
 server.close();
 console.log('');
