@@ -51,7 +51,12 @@
     border-radius:8px;margin-bottom:18px;font-size:13px}
   .err .hint{color:#c99;margin-top:4px}
   footer{margin-top:26px;color:var(--dim);font-size:11.5px;line-height:1.7}
-  canvas{display:block;width:100%}
+  /* The canvas fills its panel horizontally and its height is set in JS.
+     This rule is load-bearing, not cosmetic: without a CSS width the canvas
+     takes its layout width from the width attribute, which setupCanvas() writes
+     as cssW*dpr — so each redraw would read back a larger width and multiply
+     again. Do not remove. */
+  canvas{display:block;width:100%;max-width:100%}
   .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:8px}
   .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
 </style>
@@ -236,13 +241,48 @@ function normaliseCandles(raw){
 }
 
 /* --- canvas charting ---------------------------------------------------- */
+
+/* Size a canvas for a crisp backing store WITHOUT letting that change its
+ * LAYOUT size.
+ *
+ * The bug this fixes: the code set cv.width = cssW * dpr but never pinned a CSS
+ * width. A canvas with no CSS width takes its layout width from the width
+ * attribute, so the first draw made the element cssW*dpr wide, the next draw
+ * read that larger clientWidth and multiplied again, and so on. Measured on a
+ * 1.5x display: 1500 -> 2250 -> 3375 -> 5063 -> 7595 px across five redraws,
+ * and it redraws every 15 seconds. As the canvas widened, more axis labels
+ * fitted too, which is why it also looked like the time axis kept gaining rows.
+ *
+ * The fix separates the two sizes explicitly:
+ *   layout size -> CSS only (width:100%, a fixed pixel height)
+ *   pixel size  -> the width/height attributes, scaled by devicePixelRatio
+ * With the layout width pinned, clientWidth cannot grow and the loop is gone.
+ */
 function setupCanvas(cv){
   var dpr = window.devicePixelRatio || 1;
-  var cssW = cv.clientWidth || 900;
+
+  /* Measure the PARENT, not the canvas. Reading the canvas's own width is what
+   * closed the feedback loop: it made the element's measurement depend on the
+   * value written in the previous pass. The parent's content box is independent
+   * of anything we do to the canvas. */
+  var parent = cv.parentElement;
+  var cssW = (parent && parent.clientWidth) ? parent.clientWidth
+           : (cv.clientWidth || cv.getBoundingClientRect().width || 900);
+
   var cssH = parseInt(cv.getAttribute('height'),10) || 200;
-  cv.width = Math.round(cssW*dpr);
-  cv.height = Math.round(cssH*dpr);
+  /* Clamp the height. A canvas with height 0 has an undefined aspect ratio and
+   * can resolve to a huge intrinsic size, which is another way to blow up the
+   * layout. */
+  if(!isFinite(cssH) || cssH < 80) cssH = 200;
+  if(cssH > 400) cssH = 400;
+
+  /* Pin both axes in CSS BEFORE touching the attributes. */
+  cv.style.width = '100%';
   cv.style.height = cssH+'px';
+
+  cv.width  = Math.max(1, Math.round(cssW*dpr));
+  cv.height = Math.max(1, Math.round(cssH*dpr));
+
   var ctx = cv.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,cssW,cssH);

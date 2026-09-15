@@ -143,6 +143,28 @@ for (const iv of ['1m', '5m', '15m', '1h', '4h', '1d']) {
   }
 }
 
+console.log('\nwidth stability across redraws (the growth-loop check)\n' + '-'.repeat(74));
+// Trigger several redraws by bouncing between intervals, then confirm the
+// canvas is not getting wider each time. Before the fix the width attribute was
+// read back as the layout width and multiplied by dpr on every draw.
+const before = log.filter((e) => e[0] === 'priceCanvas' && e[1] === 'set:width').map((e) => e[2][0]);
+for (const iv of ['1m', '5m', '1m', '5m', '1m']) {
+  const btn = seg.children.find((c) => c.textContent === iv);
+  log = [];
+  btn.click();
+  await settle(1800);
+  const w = log.filter((e) => e[0] === 'priceCanvas' && e[1] === 'set:width').map((e) => e[2][0]);
+  const styleW = log.filter((e) => e[0] === 'priceCanvas' && e[1] === 'set:width' && e[2][0] === '100%');
+  console.log(`  interval ${iv.padEnd(4)} set:width values = ${JSON.stringify(w)}`);
+}
+const widths = log.filter((e) => e[0] === 'priceCanvas' && e[1] === 'set:width').map((e) => e[2][0]);
+const numeric = widths.filter((v) => typeof v === 'number');
+if (numeric.length > 1) {
+  const grew = numeric.some((v, i) => i > 0 && v > numeric[0]);
+  console.log(`  numeric widths: ${numeric.join(', ')}`);
+  if (grew) { console.log('  RUNAWAY: width increases across redraws'); problems++; }
+}
+
 server.close();
 console.log('-'.repeat(74));
 console.log(problems === 0 ? 'no duplicate axis labels at any interval' : `${problems} problem(s)`);
