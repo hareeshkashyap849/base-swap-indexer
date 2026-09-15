@@ -20,6 +20,30 @@ React version on http://127.0.0.1:5173.
 
 Requires **Node 22.6+**. No compiler, no Docker, no database server.
 
+### Starting and stopping the API on Windows
+
+`npm run api` goes through `npm.cmd`, a batch wrapper. On Windows, Ctrl+C is
+delivered to that batch file rather than to the node process it started, so npm
+exits while node keeps running and keeps the port. The next start then fails with
+`EADDRINUSE`, and the terminal looks impossible to stop.
+
+Three ways to avoid that:
+
+```powershell
+tools\serve.cmd                 # starts node directly; Ctrl+C reaches the server
+node --no-warnings --experimental-strip-types src/api/server.ts   # same thing
+$env:PORT=3002; npm run api     # or just use another port
+```
+
+If a process is already holding the port:
+
+```powershell
+node tools/kill-api.ps1         # stops whatever holds 3001
+```
+
+Closing the terminal window also works — it terminates the window's child
+processes, which Ctrl+C does not reliably do here.
+
 ---
 
 ## What this actually does

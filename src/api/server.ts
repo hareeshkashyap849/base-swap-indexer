@@ -298,14 +298,63 @@ export function buildServer(opts: ServerOptions = {}): {
 async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? 3001);
   const host = process.env.HOST ?? '127.0.0.1';
-  const { app } = buildServer({ dbPath: process.env.DB ?? DEFAULT_DB });
+  const { app, close } = buildServer({ dbPath: process.env.DB ?? DEFAULT_DB });
+
+  /**
+   * Shut down on Ctrl+C, and actually exit.
+   *
+   * Why this is explicit rather than left to the default behaviour: run through
+   * `npm run api` and Ctrl+C is delivered to the npm .cmd wrapper, not to this
+   * process. npm exits, this process does not, and the port stays held — the
+   * next `npm run api` then fails with EADDRINUSE. Handling the signal here and
+   * closing the socket and the SQLite handle makes the exit deterministic
+   * whichever way it was started.
+   *
+   * A second Ctrl+C exits immediately without waiting, so a hung close can
+   * never trap the terminal.
+   */
+  let shuttingDown = false;
+  const shutdown = (signal: string): void => {
+    if (shuttingDown) {
+      console.log(`\n  ${signal} again — exiting now`);
+      process.exit(130);
+    }
+    shuttingDown = true;
+    console.log(`\n  ${signal} received, shutting down…`);
+    void close()
+      .then(() => {
+        console.log('  closed. port released.');
+        process.exit(0);
+      })
+      .catch((err: unknown) => {
+        console.error('  error during shutdown:', err instanceof Error ? err.message : err);
+        process.exit(1);
+      });
+    // Safety net: if something keeps the loop alive, do not hang the terminal.
+    setTimeout(() => {
+      console.log('  close timed out — exiting anyway');
+      process.exit(0);
+    }, 3000).unref();
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
   try {
     await app.listen({ port, host });
     console.log(`base-swap-indexer api`);
     console.log(`  listening : http://${host}:${port}`);
     console.log(`  endpoints : /api/health  /api/swaps  /api/ohlcv  /api/stats`);
+    console.log(`  stop with : Ctrl+C  (or close this terminal window)`);
   } catch (err) {
-    console.error('failed to start:', err instanceof Error ? err.message : err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`failed to start: ${msg}`);
+    if (msg.includes('EADDRINUSE')) {
+      console.error('');
+      console.error(`  Port ${port} is already held by another process. Either stop it:`);
+      console.error(`      node tools/kill-api.ps1          (or: powershell -File tools\\kill-api.ps1)`);
+      console.error(`  or start on a different port:`);
+      console.error(`      $env:PORT=3002; npm run api`);
+    }
     process.exitCode = 1;
   }
 }
