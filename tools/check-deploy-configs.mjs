@@ -242,6 +242,33 @@ export function pickWorkflowTrigger(doc) {
   return doc.on ?? doc[true] ?? doc[String(true)] ?? null;
 }
 
+/**
+ * Expand a single cron field into a matcher, enough for the 5-field form.
+ *
+ * Module scope (not inside runChecker) because the self-test exercises it too:
+ * this function decides whether a schedule is sane, so a silent off-by-one here
+ * would let a bad schedule pass every check.
+ */
+function cronFieldMatches(field, value, min, max) {
+  for (const part of field.split(',')) {
+    const step = part.match(/^(\*|\d+(?:-\d+)?)\/(\d+)$/);
+    if (step) {
+      const [from, to] = step[1] === '*' ? [min, max] : step[1].split('-').map(Number);
+      const by = Number(step[2]);
+      for (let v = from; v <= to; v += by) if (v === value) return true;
+      continue;
+    }
+    const range = part.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      if (value >= Number(range[1]) && value <= Number(range[2])) return true;
+      continue;
+    }
+    if (part === '*') return true;
+    if (Number(part) === value) return true;
+  }
+  return false;
+}
+
 // --------------------------------------------------------------- self-test
 /**
  * The first version of this checker had a broken sequence parser and reported
@@ -324,6 +351,29 @@ function selftest() {
   t('rejects a sequence item key at the wrong indent', () =>
     throws(() => parseYaml('s:\n  - a: 1\n   b: 2\n'), 'misaligned item key'));
 
+  // The cron matcher decides whether a schedule is sane, so it must itself be
+  // tested: an off-by-one in here would silently pass a bad schedule.
+  t('cron matcher: */5 fires at :00, :05, :55 but not :07', () => {
+    eq(cronFieldMatches('*/5', 0, 0, 59), true, 'minute 0: ');
+    eq(cronFieldMatches('*/5', 5, 0, 59), true, 'minute 5: ');
+    eq(cronFieldMatches('*/5', 55, 0, 59), true, 'minute 55: ');
+    eq(cronFieldMatches('*/5', 7, 0, 59), false, 'minute 7: ');
+  });
+  t('cron matcher: */30 fires at :00 and :30 only', () => {
+    eq(cronFieldMatches('*/30', 0, 0, 59), true, 'minute 0: ');
+    eq(cronFieldMatches('*/30', 30, 0, 59), true, 'minute 30: ');
+    eq(cronFieldMatches('*/30', 15, 0, 59), false, 'minute 15: ');
+  });
+  t('cron matcher: ranges, lists and wildcard', () => {
+    eq(cronFieldMatches('1-5', 3, 0, 59), true, 'range in: ');
+    eq(cronFieldMatches('1-5', 6, 0, 59), false, 'range out: ');
+    eq(cronFieldMatches('0,30', 30, 0, 59), true, 'list: ');
+    eq(cronFieldMatches('*', 42, 0, 59), true, 'wildcard: ');
+  });
+  t('cron matcher: a per-minute schedule matches every minute', () => {
+    eq(cronFieldMatches('*', 0, 0, 59) && cronFieldMatches('*', 59, 0, 59), true);
+  });
+
   console.log('');
   console.log(`${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
@@ -364,27 +414,6 @@ const tryParse = (path) => {
     return { doc: null, error: err.message };
   }
 };
-
-/** Expand a single cron field into a matcher, enough for the 5-field form. */
-function cronFieldMatches(field, value, min, max) {
-  for (const part of field.split(',')) {
-    const step = part.match(/^(\*|\d+(?:-\d+)?)\/(\d+)$/);
-    if (step) {
-      const [from, to] = step[1] === '*' ? [min, max] : step[1].split('-').map(Number);
-      const by = Number(step[2]);
-      for (let v = from; v <= to; v += by) if (v === value) return true;
-      continue;
-    }
-    const range = part.match(/^(\d+)-(\d+)$/);
-    if (range) {
-      if (value >= Number(range[1]) && value <= Number(range[2])) return true;
-      continue;
-    }
-    if (part === '*') return true;
-    if (Number(part) === value) return true;
-  }
-  return false;
-}
 
 // Read the project's package.json so the checker can prove the commands the
 // configs reference actually resolve.

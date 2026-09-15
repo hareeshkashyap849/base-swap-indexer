@@ -97,6 +97,32 @@ export const ERC20_ABI = [
  * chart that is confidently wrong. It is listed last for that reason and the
  * batch path validates results instead of counting them.
  *
+ * DEEPER MEASUREMENT (2026-09-15, blocks 51363073..51363372 — near the head):
+ *
+ *   endpoint            getLogs(300 blocks)  ts batch(64 blocks)  ts single
+ *   publicnode                 205 ms              437 ms          177 ms/call
+ *   mainnet.base.org           406 ms         NOT supported (array) 317 ms/call
+ *   drpc.org                   157 ms   ERR "ranges over 10000 blocks not supported"
+ *
+ * Two conclusions that the earlier ranking missed:
+ *
+ *   1. publicnode is ~1.7x faster at batched block fetches AND is the only
+ *      endpoint that serves batches at all, so it must stay first for the
+ *      timestamp path. This is the path that dominates a large backfill.
+ *   2. Every endpoint is fast for getLogs NEAR THE HEAD (200-500 ms for 300
+ *      blocks). The earlier "it is slow" reading came from indexing blocks
+ *      ~4,000 behind the head, and the real cause was publicnode refusing
+ *      those with `-32602 Archive requests require a personal token` — not
+ *      raw latency. See the archive note below.
+ *
+ * ARCHIVE RANGES ARE A SEPARATE REQUIREMENT. Measured on a range ~11,000
+ * blocks behind the head: publicnode answers `-32602 Archive requests require a
+ * personal token`, drpc.org refuses ranges over 10,000 blocks, and only
+ * mainnet.base.org served the historical range. Any component that indexes
+ * blocks well behind the head therefore depends on mainnet.base.org being
+ * reachable; the near-head path does not. This is why the indexer is designed
+ * to resume from a checkpoint instead of re-scanning history.
+ *
  * Free endpoints rate-limit aggressively (measured: 6 concurrent eth_call
  * calls trip the limiter), so more than one is mandatory.
  */
