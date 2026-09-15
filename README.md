@@ -22,27 +22,31 @@ Requires **Node 22.6+**. No compiler, no Docker, no database server.
 
 ### Starting and stopping the API on Windows
 
-`npm run api` goes through `npm.cmd`, a batch wrapper. On Windows, Ctrl+C is
-delivered to that batch file rather than to the node process it started, so npm
-exits while node keeps running and keeps the port. The next start then fails with
-`EADDRINUSE`, and the terminal looks impossible to stop.
-
-Three ways to avoid that:
+Use these instead of `npm run api`:
 
 ```powershell
-tools\serve.cmd                 # starts node directly; Ctrl+C reaches the server
-node --no-warnings --experimental-strip-types src/api/server.ts   # same thing
-$env:PORT=3002; npm run api     # or just use another port
+node tools\serve.mjs              # start
+node tools\kill-api.mjs           # stop whatever holds the port
+node tools\kill-api.mjs --list    # just show who holds it
 ```
 
-If a process is already holding the port:
+**Why not `npm run api`.** `npm.cmd` is a batch wrapper: on Windows Ctrl+C is
+delivered to that batch file rather than to the node process it started. npm
+exits, node survives, the port stays held, and every later start fails with
+`EADDRINUSE` while the terminal looks impossible to stop. `tools/serve.mjs`
+spawns the server in-process, so Ctrl+C reaches something that acts on it.
+
+`kill-api.mjs` finds the holder with `netstat -ano` rather than
+`Get-NetTCPConnection`, because measured here the cmdlet reported no listener on
+a port that was demonstrably in use. If `taskkill` is refused, the holder is
+running with higher privileges than your shell — open Task Manager as
+administrator and end that node.exe, or simply use another port:
 
 ```powershell
-node tools/kill-api.ps1         # stops whatever holds 3001
+$env:PORT=3002; node tools\serve.mjs
 ```
 
-Closing the terminal window also works — it terminates the window's child
-processes, which Ctrl+C does not reliably do here.
+Nothing in the project hardcodes 3001.
 
 ---
 
