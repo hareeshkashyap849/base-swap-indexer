@@ -1,0 +1,37 @@
+{
+  "name": "base-swap-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Indexes Uniswap V3 WETH/USDC swaps on Base, stores them in SQLite, and serves them via a REST API and dashboard.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "index": "node --experimental-strip-types src/indexer/cli.ts",
+    "index:follow": "node --experimental-strip-types src/indexer/cli.ts --follow",
+    "api": "node --experimental-strip-types src/api/server.ts",
+    "web": "vite --config web/vite.config.ts",
+    "dev": "npm-run-all --parallel api web",
+    "build": "tsc --noEmit && vite build --config web/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --no-warnings --experimental-strip-types test/chunker.test.ts && node --no-warnings --experimental-strip-types test/price.test.ts && node --no-warnings --experimental-strip-types test/api.test.ts",
+    "verify": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "fastify": "^5.12.4",
+    "viem": "^2.56.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "npm-run-all": "^4.1.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^3.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.3"
+  }
+}
