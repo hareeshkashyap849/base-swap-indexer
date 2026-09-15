@@ -64,6 +64,32 @@ function readDashboard(): string | null {
   }
 }
 
+const DIAGNOSE_PATH: string = (() => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return join(here, '..', '..', 'tools', 'paste-me.js');
+})();
+
+/**
+ * Serve the browser snippet as plain text.
+ *
+ * Opening tools/paste-me.js in a browser is the reliable way to copy it: the
+ * file manager hands the .js extension to an editor that may not exist, and
+ * asking someone to open a file in Notepad and select-all is a step where the
+ * wrong thing gets selected. Measured here: a user pasted the file's PATH into
+ * the console and got `SyntaxError: Unexpected token 'in'` from the `-in-` in
+ * `diagnose-in-browser.js`.
+ *
+ * A URL cannot be mis-copied. Open /diagnose, Ctrl+A, Ctrl+C, paste into the
+ * console, Enter.
+ */
+function readDiagnose(): string | null {
+  try {
+    return existsSync(DIAGNOSE_PATH) ? readFileSync(DIAGNOSE_PATH, 'utf8') : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface ServerOptions {
   dbPath?: string;
   port?: number;
@@ -151,6 +177,19 @@ export function buildServer(opts: ServerOptions = {}): {
       note: 'dashboard/index.html not found; API endpoints are available below',
       endpoints: ['/api/health', '/api/swaps', '/api/ohlcv', '/api/stats'],
     };
+  });
+
+  // Plain-text page holding the browser diagnostic snippet. Open it, Ctrl+A,
+  // Ctrl+C, paste into the console on the dashboard tab.
+  app.get('/diagnose', async (_req, reply) => {
+    const snippet = readDiagnose();
+    if (snippet === null) {
+      reply.code(404);
+      return { error: 'not_found', detail: 'tools/paste-me.js is missing' };
+    }
+    reply.header('content-type', 'text/plain; charset=utf-8');
+    reply.header('cache-control', 'no-store');
+    return snippet;
   });
 
   app.get('/api/health', async () => {

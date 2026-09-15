@@ -48,6 +48,25 @@ $env:PORT=3002; node tools\serve.mjs
 
 Nothing in the project hardcodes 3001.
 
+### Checking the dashboard in a real browser
+
+The dashboard is verified headlessly (`npm run smoke:dashboard`), but browser
+layout is the one thing a headless harness models rather than measures. To check
+it for real:
+
+1. Start the server and open the dashboard.
+2. Open **http://127.0.0.1:3001/diagnose** in a second tab — that serves the
+   snippet as plain text.
+3. Select all, copy, switch to the dashboard tab.
+4. F12 → Console → paste → Enter. It waits ~20 s so the auto-refresh fires, then
+   reports whether the canvas layout width changed.
+
+The snippet is served over HTTP rather than handed over as a file because asking
+someone to open a `.js` file and copy it is a step where the wrong thing gets
+selected: pasting the *path* `tools/diagnose-in-browser.js` into a console fails
+with `SyntaxError: Unexpected token 'in'` — the `-in-` in the filename. A URL
+cannot be mis-copied.
+
 ---
 
 ## What this actually does
