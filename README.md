@@ -1,5 +1,8 @@
 # base-swap-indexer
 
+[![CI](https://github.com/hareeshkashyap849/base-swap-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/hareeshkashyap849/base-swap-indexer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Indexes every swap on a Uniswap V3 WETH/USDC pool on **Base mainnet**, stores
 them in SQLite, and serves them through a REST API and a dashboard.
 
@@ -233,6 +236,8 @@ Stated plainly, because a portfolio project that claims none is not credible:
 
 ## Design documents
 
+- [`TESTING.md`](TESTING.md) — how to verify this project, in four levels, plus
+  what is deliberately **not** covered
 - [`docs/01-requirements-spec.md`](docs/01-requirements-spec.md) — scope, acceptance
   criteria, explicit non-goals
 - [`docs/02-architecture.md`](docs/02-architecture.md) — component design, CROPS

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # --ignore-scripts is intentional and safe here: nothing in this project
+      # needs a postinstall step. better-sqlite3 (node-gyp, needs a compiler) and
+      # esbuild (spawns a service binary) were both deliberately removed, so CI
+      # installs in seconds with no build toolchain at all.
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck and test
+        run: npm run verify
