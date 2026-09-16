@@ -40,6 +40,21 @@ export interface IndexOptions {
   pollSeconds: number;
   /** Print progress to stdout. */
   verbose: boolean;
+  /**
+   * Largest `eth_getLogs` range to attempt, in blocks.
+   *
+   * WHY THIS IS AN OPTION AND NOT A CONSTANT. The adaptive chunker starts small and grows, which is
+   * right for a follow-mode run against an unknown endpoint: it discovers the limit instead of
+   * assuming one. It is wrong for a bulk historical backfill, where the limit is already known and
+   * the growth path is pure overhead -- measured here, a 200,000-block window at the default
+   * `max: 500` needs at least 400 calls, and reaching 500 from 50 costs ~45 extra chunks first.
+   *
+   * `tools/probe-rpc-range.mjs` measures what the endpoint will actually serve; pass the result here
+   * as `--chunk-max`. The default is unchanged, so nothing that worked before behaves differently.
+   */
+  chunkMax?: number;
+  /** First chunk size. Defaults to the chunker's own default (50). */
+  chunkInitial?: number;
 }
 
 export interface IndexResult {
@@ -85,7 +100,12 @@ export class Indexer {
       verbose: true,
       ...opts,
     };
-    this.chunker = new AdaptiveChunker({ initial: 50, min: 1, max: 500, growthStep: 10 });
+    this.chunker = new AdaptiveChunker({
+      initial: opts.chunkInitial ?? 50,
+      min: 1,
+      max: opts.chunkMax ?? 500,
+      growthStep: 10,
+    });
     this.pool = new RpcPool({
       onError: (err, attempt) => {
         if (this.opts.verbose) {
@@ -333,7 +353,20 @@ export class Indexer {
     // invariant rather than trusting it.
     assertContiguousCoverage([range], from, to);
 
-    const cache = new Map<string, number>();
+    /**
+     * The header cache starts from what the database already knows.
+     *
+     * A block's timestamp never changes, and every header fetched by any previous run is in the
+     * `blocks` table. Starting from an empty map meant a resumed run -- or any second pass over an
+     * overlapping window -- re-fetched all of them, which on the public endpoints is the single most
+     * expensive thing this program does.
+     */
+    const needed = [...new Set(swaps.map((s) => s.blockNumber))];
+    const cache = this.store.getBlockTimestamps(needed);
+    const alreadyCached = cache.size;
+    if (this.opts.verbose && alreadyCached > 0) {
+      console.log(`  headers: ${alreadyCached} of ${needed.length} already stored; fetching ${needed.length - alreadyCached}`);
+    }
     await this.fetchHeaders(swaps, cache);
 
     const rows: SwapRow[] = [];

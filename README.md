@@ -9,6 +9,12 @@ them in SQLite, and serves them through a REST API and a dashboard.
 **Pool:** `0xd0b53D9277642d899DF5C87A3966A349A798F224` (WETH/USDC, 0.05% fee)
 **Chain:** Base mainnet (8453) · **Access:** read-only, no wallet, no keys
 
+![The dashboard over 96,980 indexed swaps](docs/dashboard-200k-blocks.png)
+
+*The dashboard as it renders against the database described below — 96,980 swaps over a 200,000-block
+window, indexed from chain by this project. The header line is the index reporting its own lag, which
+is the number that decides whether the rest of the page is worth reading.*
+
 ```bash
 npm install
 npm run index      # backfill 10,000 blocks (~2 min)
@@ -165,7 +171,7 @@ run end to end, and it is asserted by `npm run smoke:dashboard`.
 Run it yourself:
 
 ```bash
-npm run verify          # typecheck + 49 tests
+npm run verify          # typecheck + 72 tests in 6 files
 ```
 
 ```
@@ -173,21 +179,74 @@ typecheck              strict, plus noUncheckedIndexedAccess and exactOptionalPr
 chunker.test.ts   20   adaptive sizing, and exact coverage (INV-2)
 price.test.ts     15   derivation maths, the direction trap, sign convention (INV-6)
 api.test.ts       14   response shapes, aggregation agreement (INV-5), malformed input (F12)
+backfill-config.test.ts  9    the endpoint override and the chunk-size flags a bulk run needs
+rpc-pool.test.ts         7    endpoint bookkeeping, against a local stub HTTP server
+discovery.test.ts        7    fixture discovery
 ```
+
+`rpc-pool.test.ts` runs a **real HTTP server on localhost** rather than mocking `fetch`, because what
+it tests is how the pool behaves when an endpoint answers with a real status and a real body. It was
+written against two defects that cost a measured 200,000-block backfill about twenty hours of
+avoidable work: a rate limit was remembered as "this endpoint cannot serve batches" (removing the only
+batch-capable endpoint from the rotation for the rest of the run), and an HTTP `429` was read as a
+statement about the endpoint's capabilities rather than about the current second. Both are now pinned
+by tests that fail if the distinction is lost again.
 
 Plus a data audit against the indexed database:
 
 ```bash
-node --experimental-strip-types verify-data.ts
+node --experimental-strip-types verify-data.ts --db data/swaps.sqlite --against-chain 20
 ```
 
+The last full run of both halves, against the 200,000-block window described above:
+
 ```
-INV-3 price cross-check on 300 rows: PASS
-  price range seen: 2436.10 .. 2486.20 USDC per WETH
-INV-6 sign consistency: PASS
-timestamp sanity: PASS
-INV-5 aggregation agreement: PASS   (JS 5682828.51 == SQL 5682828.51)
+rows in db: 96980
+  INV-3 price cross-check on 300 rows: PASS
+      price range seen: 2361.20 .. 2601.51 USDC per WETH
+  price magnitude is plausible for this pair: PASS  (2361..2602)
+  INV-6 sign consistency: PASS
+  timestamp sanity: PASS
+      time span: 2026-09-12T00:49:33.000Z .. 2026-09-16T15:56:09.000Z
+  both trade directions present: PASS  (buy WETH=50112, sell WETH=46868)
+  INV-5 SQL vs JS volume agreement: PASS  (JS 77685103.82 vs SQL 77685103.82)
+
+  chain cross-check on 20 sampled blocks (external ground truth)
+  every stored field matches the chain on 40 swaps across 20 blocks: PASS
+      (amounts, sqrtPriceX96, liquidity, tick, sender and recipient)
+all data checks passed
 ```
+
+### Scale, and where the limit actually is
+
+The database these numbers come from holds **96,980 swaps spanning exactly 200,000 blocks**
+(51,192,413 → 51,392,411, i.e. 2026-09-12 to 2026-09-16), indexed from chain in **37 minutes**. The API
+serves it directly:
+
+```
+GET /api/stats?hours=120
+  {"trades":96980, "volumeUsdc":77685103.81502175, "vwap":2463.4617383324494,
+   "uniqueTraders":2801, "firstBlock":51192413, "lastBlock":51392411,
+   "low":2359.2114541627666, "high":2613.8638348029644}
+```
+
+**The bottleneck is the endpoints, not the code, and that is measurable rather than a claim.** The log
+scan is 100 requests of 2,000 blocks; the header fetch needs one header per block containing a swap
+(53,467 of them here) and only a batching endpoint makes that affordable. The first attempt at this
+window ran the header phase at **1.7 blocks/s** — about twenty hours — and the cause was three defects
+in this repository, all now fixed and pinned by tests:
+
+| Defect | What it did |
+|---|---|
+| every batch failure was remembered as "this endpoint cannot serve batches" | one rate limit removed the only batch-capable endpoint from the rotation for the rest of the run |
+| an HTTP `429` was read as a capability statement | the same thing, one layer down: the status was not consulted before the body |
+| the header cache started empty every run | every header was re-fetched on every pass, although all of them were already in the `blocks` table |
+
+With those fixed the phase measured **20 blocks/s** — and then stopped, because that was the ceiling of
+the single usable endpoint. The fix for that was not in the code either: `tools/probe-endpoints.mjs`
+found two more hosts that serve batches, and the same phase then ran at **40 blocks/s** and reused
+29,470 of the 53,467 headers it had already fetched. What remains is a genuinely external limit: three
+batch-capable endpoints at roughly 20 headers/second each.
 
 And a headless smoke test for the dashboard, which needs the API running:
 
@@ -254,6 +313,82 @@ npm run index -- --blocks 500     smaller window
 npm run index -- --reindex        ignore the saved checkpoint
 npm run index:follow              backfill, then keep polling
 ```
+
+### Indexing a large historical window
+
+A big backfill is limited by the endpoints, not by this code, and the limit is measurable. Only one
+of the three default endpoints will serve a historical range at all — so **measure that first**, then
+tell the indexer what it can rely on:
+
+```bash
+node --experimental-strip-types tools/probe-rpc-range.mjs      # who will answer, and how far back
+
+node --experimental-strip-types src/indexer/cli.ts \
+  --blocks 200000 --chunk-max 2000 --chunk-initial 2000 \
+  --db data/swaps-scale.sqlite
+```
+
+Measured 2026-09-16, 2,000-block windows requested from four distances behind the head:
+
+| Endpoint | head-1k | head-50k | head-100k | head-250k |
+|---|---|---|---|---|
+| `mainnet.base.org` | 1,578 logs | 926 | 840 | 1,310 |
+| `base-rpc.publicnode.com` | 1,578 | `Archive requests require a personal token` | same | same |
+| `base.drpc.org` | `ranges over 10000 blocks are not supported on free plan` | same | same | same |
+
+Two consequences worth knowing before a long run starts:
+
+- **`--chunk-max` exists because the adaptive chunker is wrong for this job.** It starts at 50 and
+  grows by 10, which is how it discovers an unknown limit — but here the limit is known (2,000), and
+  a 200,000-block window at the default maximum of 500 needs at least 400 calls. Passing the measured
+  limit in makes the first chunk the right size.
+- **Restricting to one endpoint with `BASE_RPC_URLS` breaks the startup check.** The pool needs to
+  rotate: `mainnet.base.org` rate-limits after a handful of `eth_call`s (measured: the identity
+  check's seven reads trip it), and with a single endpoint there is nowhere to rotate to. Leave the
+  default list in place; the historical pulls will land on the endpoint that can serve them, at the
+  cost of a failed call per chunk first.
+
+### Verifying what was indexed
+
+```bash
+node --experimental-strip-types verify-data.ts --db data/swaps-scale.sqlite
+node --experimental-strip-types verify-data.ts --db data/swaps-scale.sqlite --against-chain 20
+```
+
+The first form is offline and checks the database against itself: two independent price derivations,
+opposing signs, plausible timestamps, both trade directions, and SQL-vs-JS volume agreement. The
+second **re-reads sampled blocks from a public RPC and compares every stored field** — amounts,
+`sqrtPriceX96`, liquidity, tick, sender, recipient — decoding with viem directly rather than with
+this project's own decoder, because running our decoder twice proves it is deterministic rather than
+correct. That is the only check here that can catch a consistently wrong database.
+
+### The real ceiling on a large backfill
+
+A big backfill has two phases with very different bottlenecks, and the second one is not this code's
+to fix. `tools/probe-batch-size.mjs` measures it:
+
+```bash
+node --experimental-strip-types tools/probe-batch-size.mjs
+```
+
+Measured 2026-09-16, asking each endpoint for batches of block headers:
+
+| Endpoint | 50 | 200 | 500 | 1000+ | Conclusion |
+|---|---|---|---|---|---|
+| `base-rpc.publicnode.com` | 5.5 s | 11.4 s | 23.9 s | times out | the only one that serves batches, at ~**20 headers/second** regardless of size |
+| `mainnet.base.org` | `-32014 maximum 1 request in batch` | same | same | same | cannot batch at all |
+| `base.drpc.org` | `Batch of more than 3 requests` (HTTP 500) | same | same | same | cannot batch usefully |
+
+A 200,000-block window needs roughly **86,000 headers** (about 43% of blocks contain a swap), so at
+20/second the header phase alone is **about 72 minutes**. That is the endpoint's throughput, not the
+program's: the run measures at ~16.7 headers/s, which is ~84% of what the probe says is available.
+
+The batch size of **200** is therefore a measurement, not a guess: 500 works but takes 23.9 s against
+the batch path's 30 s timeout, which leaves no margin on a slow day.
+
+If a much larger index is ever wanted, the lever is **more batch-capable endpoints**, not a larger
+batch — and the honest version of that claim is "more distinct public RPC hosts", which is a
+different piece of work from anything in this repository.
 
 ---
 

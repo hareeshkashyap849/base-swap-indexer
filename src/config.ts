@@ -125,12 +125,87 @@ export const ERC20_ABI = [
  *
  * Free endpoints rate-limit aggressively (measured: 6 concurrent eth_call
  * calls trip the limiter), so more than one is mandatory.
+ *
+ * OVERRIDABLE, BECAUSE THE RIGHT LIST DEPENDS ON THE RUN
+ *
+ * `BASE_RPC_URLS` (comma-separated) replaces this list for one run. That exists because of the
+ * measurement above: a historical backfill can ONLY use mainnet.base.org, so leaving the other two
+ * in the rotation costs a failed call and a backoff sleep per chunk before every chunk that
+ * succeeds. Measured 2026-09-16 with `tools/probe-rpc-range.mjs`, 2,000-block windows:
+ *
+ *   mainnet.base.org          logged 840-1,578 swaps per window at head-1k, -50k, -100k and -250k
+ *   base-rpc.publicnode.com   "Archive requests require a personal token" past ~50k blocks
+ *   base.drpc.org             "ranges over 10000 blocks are not supported on free plan" (it refused
+ *                             a 2,000-block range with that message too)
+ *
+ * So a 200k backfill against the default list spends most of its first attempts on endpoints that
+ * cannot answer. `BASE_RPC_URLS=https://mainnet.base.org node --experimental-strip-types
+ * src/indexer/cli.ts --blocks 200000` is the run that works, and the probe is how you re-check
+ * whether it still does.
+ *
+ * WHICH ENDPOINTS CAN BATCH, WHICH IS WHAT THE HEADER PHASE NEEDS
+ *
+ * The log scan is 100 requests for a 200,000-block window; the header fetch is one per distinct
+ * block containing a swap (~86,000 of them), so **the header phase is the expensive one and only a
+ * batching endpoint makes it affordable**. `tools/probe-endpoints.mjs` measured every candidate host
+ * on 2026-09-16, asking for 200 headers in one request:
+ *
+ *   base-rpc.publicnode.com              OK 200   (10.5 s)
+ *   base.publicnode.com                  OK 200   (10.0 s)   <- same operator, different host
+ *   base-mainnet.public.blastapi.io       OK 200    (6.3 s)
+ *   mainnet.base.org                     "maximum 10 calls in 1 batch"  -- batches, but only 10
+ *   base.drpc.org                        HTTP 500, right-sized reply with fields missing
+ *   gateway.tenderly.co/public/base      HTTP 429
+ *   1rpc.io/base, base.meowrpc.com       usage limit / bad request
+ *   base.llamarpc.com, base.blockpi.network   HTML, not JSON-RPC
+ *   base.api.onfinality.io/public        needs an API key
+ *
+ * That measurement is why the list below is four long rather than three: **the ceiling on a large
+ * backfill is the number of batch-capable endpoints, not the batch size.** One host delivered ~20
+ * headers/s and the phase crawled once that host throttled; three usable hosts are roughly three
+ * times the ceiling.
+ *
+ * `mainnet.base.org`'s limit of 10 is recorded rather than exploited: it is the only endpoint that
+ * serves historical log ranges, and it already carries that load. An adaptive batch size that parsed
+ * "maximum N calls" and retried smaller would let it help with headers too, and it is not implemented
+ * because the two new hosts cover the need at 200 per request -- machinery beyond the measured need
+ * is its own kind of defect.
  */
-export const RPC_URLS: readonly string[] = [
+const DEFAULT_RPC_URLS: readonly string[] = [
   'https://base-rpc.publicnode.com',
   'https://mainnet.base.org',
   'https://base.drpc.org',
+  'https://base.publicnode.com',
+  'https://base-mainnet.public.blastapi.io',
 ];
+
+/**
+ * The endpoint list for this run.
+ *
+ * Parsed rather than trusted: a trailing comma, a stray space or an empty value would otherwise
+ * become an endpoint that fails on every call, and the failure would look like a network problem.
+ * An override that parses to nothing falls back to the defaults instead of producing an empty pool,
+ * which `RpcPool` would reject outright.
+ */
+export function rpcUrlsFrom(env: string | undefined, fallback: readonly string[] = DEFAULT_RPC_URLS): readonly string[] {
+  if (env === undefined) return fallback;
+  const parsed = env
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
+  if (parsed.length === 0) return fallback;
+  for (const url of parsed) {
+    if (!/^https?:\/\//.test(url)) {
+      throw new Error(
+        `BASE_RPC_URLS entry ${JSON.stringify(url)} is not an http(s) URL. ` +
+          'An endpoint without a scheme fails on every call and reads as a network outage.',
+      );
+    }
+  }
+  return parsed;
+}
+
+export const RPC_URLS: readonly string[] = rpcUrlsFrom(process.env.BASE_RPC_URLS);
 
 /** Approximate Base block time in seconds — used only for time estimates. */
 export const SECONDS_PER_BLOCK = 2;

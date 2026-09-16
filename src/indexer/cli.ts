@@ -6,13 +6,27 @@
  *   npm run index:follow          backfill, then keep polling for new blocks
  *
  * Flags:
- *   --blocks <n>     how many blocks to backfill when there is no checkpoint
- *   --to <n>         stop at this block (inclusive)
- *   --db <path>      database file (default data/swaps.sqlite)
- *   --follow         keep running and poll for new blocks
- *   --poll <sec>     poll interval in follow mode (default 12)
- *   --quiet          less output
- *   --reindex        ignore any saved checkpoint and re-backfill
+ *   --blocks <n>       how many blocks to backfill when there is no checkpoint
+ *   --to <n>           stop at this block (inclusive)
+ *   --db <path>        database file (default data/swaps.sqlite)
+ *   --follow           keep running and poll for new blocks
+ *   --poll <sec>       poll interval in follow mode (default 12)
+ *   --quiet            less output
+ *   --reindex          ignore any saved checkpoint and re-backfill
+ *   --chunk-max <n>    largest eth_getLogs range to attempt (default 500)
+ *   --chunk-initial <n> first chunk size (default 50)
+ *
+ * The two chunk flags exist for bulk backfills. The adaptive chunker is right for follow mode,
+ * where the endpoint's limit is unknown and has to be discovered; it is overhead for a historical
+ * run, where `tools/probe-rpc-range.mjs` has already measured the limit. A 200,000-block window at
+ * the default maximum needs at least 400 calls, and reaching the maximum from 50 costs ~45 chunks
+ * of growth first:
+ *
+ *   BASE_RPC_URLS=https://mainnet.base.org node --experimental-strip-types src/indexer/cli.ts \
+ *     --blocks 200000 --chunk-max 2000 --chunk-initial 2000 --db data/swaps-scale.sqlite
+ *
+ * Environment:
+ *   BASE_RPC_URLS      comma-separated endpoint list for this run (see src/config.ts)
  */
 
 import { Store } from '../lib/db.ts';
@@ -30,6 +44,8 @@ interface CliArgs {
   poll: number;
   quiet: boolean;
   reindex: boolean;
+  chunkMax?: number;
+  chunkInitial?: number;
 }
 
 function parseArgs(argv: readonly string[]): CliArgs {
@@ -39,6 +55,8 @@ function parseArgs(argv: readonly string[]): CliArgs {
   };
   const has = (name: string): boolean => argv.includes(`--${name}`);
   const to = get('to');
+  const chunkMax = get('chunk-max');
+  const chunkInitial = get('chunk-initial');
   const args: CliArgs = {
     blocks: Number(get('blocks') ?? 10_000),
     db: get('db') ?? 'data/swaps.sqlite',
@@ -49,6 +67,26 @@ function parseArgs(argv: readonly string[]): CliArgs {
   };
   if (to !== undefined) args.to = BigInt(to);
   if (!Number.isFinite(args.blocks) || args.blocks <= 0) throw new Error(`--blocks must be a positive number`);
+  if (chunkMax !== undefined) {
+    const n = Number(chunkMax);
+    // Validated rather than passed through: `--chunk-max foo` would otherwise become NaN, and the
+    // chunker's clamp would silently turn NaN into the minimum -- a bulk run crawling one block at a
+    // time with no error to explain it.
+    if (!Number.isInteger(n) || n < 1) throw new Error(`--chunk-max must be a positive integer, got ${JSON.stringify(chunkMax)}`);
+    args.chunkMax = n;
+  }
+  if (chunkInitial !== undefined) {
+    const n = Number(chunkInitial);
+    if (!Number.isInteger(n) || n < 1) {
+      throw new Error(`--chunk-initial must be a positive integer, got ${JSON.stringify(chunkInitial)}`);
+    }
+    args.chunkInitial = n;
+  }
+  if (args.chunkMax !== undefined && args.chunkInitial !== undefined && args.chunkInitial > args.chunkMax) {
+    // Reported, not clamped: a caller who asked for an initial size above the maximum has a wrong
+    // mental model of the run, and silently giving them the maximum hides that.
+    throw new Error(`--chunk-initial (${args.chunkInitial}) must not exceed --chunk-max (${args.chunkMax})`);
+  }
   return args;
 }
 
@@ -98,7 +136,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
   console.log('base-swap-indexer');
-  console.log(`  rpc endpoints : ${RPC_URLS.length}`);
+  console.log(`  rpc endpoints : ${RPC_URLS.length}${RPC_URLS.length === 1 ? ` (${RPC_URLS[0]})` : ''}`);
   console.log(`  database      : ${args.db}`);
   console.log(`  mode          : ${args.follow ? 'backfill + follow' : 'backfill only'}`);
 
@@ -120,6 +158,11 @@ async function main(): Promise<void> {
     verbose: !args.quiet,
   };
   if (args.to !== undefined) opts.toBlock = args.to;
+  if (args.chunkMax !== undefined) opts.chunkMax = args.chunkMax;
+  if (args.chunkInitial !== undefined) opts.chunkInitial = args.chunkInitial;
+  if (args.chunkMax !== undefined) {
+    console.log(`  chunk range   : max ${args.chunkMax} blocks per eth_getLogs (default 500)`);
+  }
 
   const indexer = new Indexer(store, opts);
 

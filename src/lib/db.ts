@@ -222,6 +222,45 @@ export class Store {
     return row?.block_hash;
   }
 
+  /**
+   * Recorded timestamps for a set of blocks, keyed as `String(blockNumber)`.
+   *
+   * WHY THIS EXISTS: A TIMESTAMP IS IMMUTABLE, SO FETCHING IT TWICE IS PURE WASTE.
+   *
+   * Every header this project has ever fetched is already in the `blocks` table -- `upsertBlock`
+   * puts it there, and `rollbackFrom` is the only thing that removes it. But a run needs one header
+   * per distinct block containing a swap, which for a 200,000-block window is ~120,000 headers, and
+   * until this method existed the run re-fetched every one of them on every pass because the cache
+   * started empty each time.
+   *
+   * The cost is not theoretical: measured on the public endpoints, a header batch that lands on a
+   * rate-limited endpoint waits out its timeout, so the header phase ran at ~1.7 blocks/s and a
+   * 200,000-block window would have needed about twenty hours of pure repeat work for data already
+   * in the database.
+   *
+   * Batched through a temporary table rather than an `IN (...)` list: a 120,000-element parameter
+   * list exceeds SQLite's variable limit, and the failure ("too many SQL variables") would arrive
+   * only on the large runs this exists to make possible.
+   */
+  getBlockTimestamps(blockNumbers: readonly bigint[]): Map<string, number> {
+    const out = new Map<string, number>();
+    if (blockNumbers.length === 0) return out;
+    return this.txn(() => {
+      this.db.exec('CREATE TEMP TABLE IF NOT EXISTS _wanted (block_number INTEGER PRIMARY KEY)');
+      this.db.exec('DELETE FROM _wanted');
+      const insert = this.db.prepare('INSERT OR IGNORE INTO _wanted (block_number) VALUES (?)');
+      for (const n of blockNumbers) insert.run(Number(n));
+      const rows = this.db
+        .prepare(
+          'SELECT b.block_number AS n, b.timestamp AS t FROM blocks b JOIN _wanted w ON w.block_number = b.block_number',
+        )
+        .all() as Array<{ n: number; t: number }>;
+      for (const row of rows) out.set(String(row.n), row.t);
+      this.db.exec('DELETE FROM _wanted');
+      return out;
+    });
+  }
+
   getState(): IndexerState | undefined {
     const row = this.db
       .prepare(

@@ -74,6 +74,62 @@ read backwards — that is the specific failure mode this project was built to
 make impossible, and the reason `verify-data.ts` asserts on magnitude rather
 than only on self-consistency.
 
+### Level 2b — the same audit against the chain (~30 seconds, needs network)
+
+Everything above compares the database with itself and with a formula written from the same
+understanding of the pool. A database that is *consistently* wrong about the same fact — a misread
+word offset, a wrong event signature, a decimal that should not be there — passes all of it. This is
+the check that goes to the chain:
+
+```bash
+node --experimental-strip-types verify-data.ts --db data/swaps.sqlite --against-chain 20
+```
+
+```
+  chain cross-check on 20 sampled blocks (external ground truth)
+  every stored field matches the chain on 41 swaps across 20 blocks: PASS
+      (amounts, sqrtPriceX96, liquidity, tick, sender and recipient)
+```
+
+It samples blocks at random, re-reads each one's `Swap` logs, and compares **every stored field**
+against the decoded log. It decodes with viem rather than with this project's decoder on purpose:
+running our decoder twice proves it is deterministic, not that it is right.
+
+### Level 2c — a large historical window (hours, and endpoint-bound)
+
+The two things that decide whether a big backfill is possible are not in this repository, so they are
+measured rather than assumed:
+
+```bash
+node --experimental-strip-types tools/probe-rpc-range.mjs      # who serves history, and how far back
+node --experimental-strip-types tools/probe-batch-size.mjs     # who can batch headers, and how large
+
+node --experimental-strip-types src/indexer/cli.ts \
+  --blocks 200000 --chunk-max 2000 --chunk-initial 2000 \
+  --db data/swaps-scale.sqlite
+```
+
+Expect the run to be **endpoint-bound, not CPU-bound**: the log scan is 100 requests of 2,000 blocks,
+and the header fetch needs roughly one header per swap-bearing block (~43% of the window), which the
+only batch-capable endpoint delivers at about 20 per second. `tools/probe-batch-size.mjs` is where
+that number comes from, and re-running it is how you find out whether it still holds.
+
+Watch a running backfill without disturbing it:
+
+```bash
+node ../../toolchain/watch-index-progress.mjs data/swaps-scale.sqlite --seconds 30
+```
+
+```
+t0      blocks=9942 swaps=0 log=406 batchFallbacks=2
+t+30s   blocks=10542 (+600) swaps=0 (+0) batchFallbacks=2 (+0)
+header rate      : 20.0 blocks/s
+estimate to 86000 blocks: 62.9 minutes remaining
+```
+
+The `batchFallbacks` counter is the one to read first: it counts slices that had to be fetched one
+block at a time, which is 200× the requests and the difference between an hour and a day.
+
 ### Test that the checks can actually fail
 
 A check that cannot fail is not a check. Try these:
