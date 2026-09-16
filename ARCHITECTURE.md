@@ -137,7 +137,7 @@ can tell a deliberate choice from an accident.
 | **Store raw price fields, convert at query time** | raw fields + derivation on read | precompute price at insert | If the conversion formula turns out to be wrong, the raw data is still there to recompute. Avoids freezing an error into the database. |
 | **Polling, not WebSocket** | polling | WebSocket | Dashboard refresh is seconds-scale; push would add reconnection complexity for no visible gain. |
 | **API framework** | **Fastify** | Express / Hono | Built-in schema validation, which is exactly what F12 needs (bad input → 4xx, never 500). |
-| **Front end** | **single-file zero-build dashboard** | Next.js | The dashboard is a purely client-side view; SSR and routing buy nothing here. A file the reviewer can open is worth more than a build pipeline. |
+| **Front end** | **single-file zero-build dashboard** | ① Next.js ② React + Vite | ① the dashboard is a purely client-side view; SSR and routing buy nothing here ② a React version was written and removed: it could not be built in the development environment, so its production build was never verified. A file the reviewer can open beats a build pipeline nobody ran. |
 | **Tests** | **built-in `node --test`** | Jest / Vitest | Node 24's runner is sufficient and removes a dependency. `npm test` works with no configuration. |
 | **Reorg strategy** | store `blockHash`, roll back and re-index on mismatch | ① ignore reorgs ② only index blocks older than a confirmation depth | ① ignoring is simply wrong — the data stays incorrect forever ② waiting that long adds significant lag. Rollback is the correct, implementable middle. |
 
@@ -342,10 +342,13 @@ framework, no container.
 
 - **No reorg has been observed on a live chain.** Recovery is verified by
   reasoning about stored hashes, not by catching a real reorg. §1.3.
-- **The React dashboard under `web/` is unbuilt.** It typechecks; its production
-  build was never produced in the environment this was written in. The static
-  dashboard is what is served and what was verified.
 - **`node:sqlite` is experimental** on Node 24. `Store` in `src/lib/db.ts` is the
   only place the driver is touched, so replacing it is contained.
 - **Public RPC endpoints have no SLA.** Correctness is defended by validation and
   cross-checks; it is not guaranteed by the provider.
+- **A React + Vite front end was written and then deleted.** It could not be
+  built in the development environment, so its production build was never
+  verified. Shipping an unverifiable second front end would have made "which
+  front end is real?" a question the documentation had to answer; the single-file
+  dashboard is the one that was run end to end and is asserted by
+  `npm run smoke:dashboard`.

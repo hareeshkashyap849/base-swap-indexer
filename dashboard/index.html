@@ -135,12 +135,16 @@
 /* ---------------------------------------------------------------------------
  * Dependency-free dashboard.
  *
- * Deliberately a single file with no build step and no framework. The React app
- * under web/ is the primary implementation, but requiring `npm install` plus a
- * bundler before anyone can see the output raises the cost of looking at this
- * project for no benefit: what matters here is that the API returns real data,
- * and that is visible in one click. Charts are hand-drawn on <canvas> for the
- * same reason — a charting library would be a second dependency for two series.
+ * Deliberately a single file with no build step and no framework. Requiring
+ * `npm install` plus a bundler before anyone can see the output raises the cost
+ * of looking at this project for no benefit: what matters here is that the API
+ * returns real data, and that is visible in one click. Charts are hand-drawn on
+ * <canvas> for the same reason — a charting library would be a second dependency
+ * for two series.
+ *
+ * A React + Vite version of this page was written and removed: it could not be
+ * built in the development environment, so its production build was never
+ * verified. One front end that runs beats two where one is a claim.
  * ------------------------------------------------------------------------- */
 
 var INTERVALS = ['1m','5m','15m','1h','4h','1d'];

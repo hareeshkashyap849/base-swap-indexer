@@ -146,7 +146,7 @@ async function main(): Promise<void> {
   console.log(`  price decimals   : token0=10^${decimals0} token1=10^${decimals1} (${SYMBOL0}/${SYMBOL1})`);
   console.log(`  elapsed          : ${(elapsed / 1000).toFixed(1)}s`);
   console.log('  ────────────────────────────────────────────');
-  console.log(`\n  next: npm run api   (then npm run web)`);
+  console.log(`\n  next: npm run api   (then open http://127.0.0.1:3001/)`);
 
   store.close();
 }

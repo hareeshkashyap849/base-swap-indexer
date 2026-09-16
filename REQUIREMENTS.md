@@ -162,8 +162,8 @@ The scope boundary. Each of these was considered and rejected on purpose.
 5. `README.md` — what it is, architecture, one-command run, methodology, known limitations
 
 > The dashboard is `dashboard/index.html`, a single self-contained file with no
-> build step. A React + Vite implementation also exists under `web/`; see the
-> README's known limitations for its verification status.
+> build step, served by the API at `/`. There is no framework front end; see
+> §5 for why the React implementation was removed rather than shipped unverified.
 
 ---
 
@@ -175,6 +175,6 @@ the project look like it still matches a plan it has outgrown.
 | Original | What shipped | Why |
 |---|---|---|
 | `better-sqlite3` | **`node:sqlite`** (Node built-in) | The native module needs a compile toolchain. On a machine without one it fails at `npm install`, which puts exactly the barrier in front of a reviewer that N5 was written to avoid. The built-in driver has no install step at all. Cost: a smaller API and an experimental warning on Node 24. |
-| React + Vite + Recharts as the dashboard | **A single-file canvas dashboard** is what is served and verified | A zero-build single HTML file means a reviewer opens the URL and sees data. The React version remains in `web/` and is the more conventional choice, but it could not be built in the environment this was written in, so it is **not** the default. |
-| Runtime dependencies: 4 | **2** (`fastify`, `viem`) | React/Vite/Recharts are dev-only and are not on the path the API serves. |
-| `npm run dev` as the single entry point | `npm run index && npm run api` | The indexer is a one-shot backfill, not a watcher. Making `dev` mean "index then serve" would hide the two distinct steps. |
+| React + Vite + Recharts as the dashboard | **A single-file canvas dashboard**, and the React app was **deleted** | The React version could not be built in the development environment, so its production build was never verified. Keeping it would have left an unverifiable component in the repository and made "which front end is real?" a question the README had to answer. A zero-build file the reviewer can open beats a build pipeline nobody ran. |
+| Runtime dependencies: 4 | **2** (`fastify`, `viem`) | React/Vite/Recharts were dev-only and never on the path the API serves; they are gone with the app. |
+| `npm run dev` as the single entry point | `npm run index && npm run api` | The indexer is a one-shot backfill, not a watcher. Making `dev` mean "index then serve" would hide the two distinct steps. The script was removed rather than kept as a misleading alias. |

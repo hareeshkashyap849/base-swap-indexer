@@ -171,9 +171,11 @@ Being explicit, because a testing guide that claims completeness is not useful:
 - **No test against a real chain reorganisation.** Reorg recovery is exercised
   by logic about stored block hashes, not by observing one happen. The 64-block
   probe depth is a design choice, not a measured bound.
-- **The React dashboard's production build is unverified.** `web/` typechecks but
-  `vite build` was not run in the environment this was written in (esbuild
-  cannot start there). The static `dashboard/` **was** verified end to end.
+- **No front-end build to verify.** There is no bundler step at all: the
+  dashboard is one HTML file the API serves directly. A React + Vite version once
+  existed and was removed because `vite build` could not run in the development
+  environment (esbuild cannot start there), so its production build was never
+  verified — see `REQUIREMENTS.md` §5.
 - **No load test.** The API is exercised at single-request scale; 9,000 rows is
   not a stress test.
 - **No testnet/mainnet deployment test.** There is nothing deployed and nothing

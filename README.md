@@ -15,10 +15,10 @@ npm run index      # backfill 10,000 blocks (~2 min)
 npm run api        # http://127.0.0.1:3001
 ```
 
-Then open **http://127.0.0.1:3001/** for the dashboard, or `npm run web` for the
-React version on http://127.0.0.1:5173.
+Then open **http://127.0.0.1:3001/** for the dashboard.
 
-Requires **Node 22.6+**. No compiler, no Docker, no database server.
+Requires **Node 22.6+**. No compiler, no Docker, no database server, no front-end
+build.
 
 ### Starting and stopping the API on Windows
 
@@ -147,11 +147,16 @@ built-in `node:test` runner, so there is no test framework either.
 
 ### The dashboard needs no build
 
-The default dashboard is a single self-contained HTML file with hand-drawn
-canvas charts, served by the API at `/`. Opening it requires no `npm install`,
-no bundler and no toolchain. The React + Vite app under `web/` is the primary
-implementation and is what demonstrates framework work; the static file is what
-makes the output immediately visible.
+The dashboard is a single self-contained HTML file with hand-drawn canvas charts,
+served by the API at `/`. Opening it requires no `npm install`, no bundler and no
+toolchain.
+
+There is deliberately no framework front end. A React + Vite version was written
+first and removed: it could not be built in the environment this project was
+developed in, so its production build was never verified, and an unverifiable
+component is worse than an absent one — it makes "which front end is real?" a
+question the README has to answer. What remains is the version that was actually
+run end to end, and it is asserted by `npm run smoke:dashboard`.
 
 ---
 
@@ -259,7 +264,6 @@ src/indexer/     chunker (adaptive sizing) · indexer (fetch, decode, reorg) · 
 src/lib/         price maths · RPC pool · SQLite store · read queries
 src/api/         fastify server and routes
 dashboard/       single-file zero-build dashboard (what the API serves)
-web/             React + Vite dashboard (see known limitations)
 test/            49 cases, no network, no shared state
 tools/           config and lifecycle checkers
 verify-data.ts   data audit run against a populated database
@@ -294,9 +298,6 @@ Stated plainly, because a portfolio project that claims none is not credible:
 - **No reorg or partition test against a live chain.** Reorg recovery is
   exercised by unit-level reasoning about stored hashes, not by observing a real
   reorg. That is a genuine gap in the evidence.
-- **The React dashboard was not built in the environment this was written in**,
-  because esbuild cannot start there. It typechecks, but its production build is
-  unverified. The static dashboard *was* verified end to end.
 
 ---
 
