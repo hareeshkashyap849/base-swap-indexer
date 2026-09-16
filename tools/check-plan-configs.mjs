@@ -1,17 +1,18 @@
 /**
- * Extract the deployment configs that are embedded in 部署方案.md and write
- * them into a scratch directory, so `check-deploy-configs.mjs` can validate
- * them before they exist as real project files.
+ * Extract the deployment configs that are embedded in the project's deployment plan
+ * and write them into a scratch directory, so `check-deploy-configs.mjs` can
+ * validate them before they exist as real project files.
  *
- * Why this exists: the plan document is the single source of truth for the
- * deployment configs while the project is still in the planning stage. Without
- * this, the YAML in the document is prose that nobody ever parses — and prose
- * YAML rots. With it, the exact text that will be written into
- * `.github/workflows/index.yml` and `render.yaml` is checked on every run.
+ * The plan is the single source of truth for the deployment configs while the
+ * project is still in the planning stage. (It is kept outside this repository,
+ * so its content is reproduced here rather than linked.) Without this step, the
+ * YAML in that plan is prose that nobody ever parses — and prose YAML rots. With
+ * it, the exact text that will be written into `.github/workflows/index.yml` and
+ * `render.yaml` is checked on every run.
  *
- * Deliberately does NOT spawn the checker: under the DSH sandbox a child
- * process cannot be given piped stdio, so a nested invocation fails with EPERM.
- * Run the two commands separately (see below).
+ * Deliberately does NOT spawn the checker: in a sandbox that forbids named
+ * pipes, a child process cannot be given piped stdio, so a nested invocation
+ * fails with EPERM. Run the two commands separately (see below).
  *
  * Run:
  *   node tools/check-plan-configs.mjs <plan.md> <outDir>
