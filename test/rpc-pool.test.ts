@@ -3,8 +3,11 @@
  *
  * WHY THESE TWO, TOGETHER
  *
- * Both were found by measuring a 200,000-block backfill that ran at **1.7 blocks/s** -- about twenty
- * hours for a phase that should take minutes. Neither defect shows up as an error:
+ * Both were found by measuring a 200,000-block backfill whose header phase ran at **1.7 swap-bearing
+ * blocks/s** -- the headers that phase fetches, not the 200,000 blocks the window spans -- which is
+ * that attempt's own attributed figure, not one this repository can re-measure: its log is not
+ * committed. Twenty hours is the extrapolation the README's "Scale" section shows. Neither defect
+ * shows up as an error:
  *
  *   1. `getBlocksBatch` remembered EVERY failure as "this endpoint cannot serve batches". A rate
  *      limit is not a capability: the moment the one endpoint that *does* serve batches got rate

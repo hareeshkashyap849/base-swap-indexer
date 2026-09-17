@@ -3,8 +3,14 @@
  *
  * WHY THIS EXISTS
  *
- * A 200,000-block backfill measured at **0.2 blocks/s** in its header phase, against a probe that said
- * the one usable endpoint delivers ~20 headers/second. The gap was not in the code: `mainnet.base.org`
+ * A 200,000-block backfill measured **0.2 blocks/s** in its header phase. That is the figure this file
+ * was written with, and it is one of three the repository carries for that phase of that attempt: the
+ * README attributes **1.7 swap-bearing blocks/s** to it, and `src/lib/rpc.ts` gives **2 blocks/s** as
+ * the arithmetic ceiling of a 200-header batch against the 90 s timeout then in use. The denominators
+ * differ, none of the three is reproducible from anything committed (that attempt's log is not in the
+ * repository), and this file does not try to pick between them. What it can hand you is the other end
+ * of the gap, which is what the probe measures: the one usable endpoint delivers ~20 headers/second.
+ * The gap was not in the code: `mainnet.base.org`
  * refuses batches outright and `base.drpc.org` refuses anything over three requests, so every header
  * in the window went through a single host, and when that host throttled there was nothing to rotate
  * to. **The lever on a large index is the number of batch-capable endpoints, not the batch size.**

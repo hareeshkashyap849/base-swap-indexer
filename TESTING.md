@@ -110,9 +110,12 @@ node --experimental-strip-types src/indexer/cli.ts \
 ```
 
 Expect the run to be **endpoint-bound, not CPU-bound**: the log scan is 100 requests of 2,000 blocks,
-and the header fetch needs roughly one header per swap-bearing block (~43% of the window), which the
-only batch-capable endpoint delivers at about 20 per second. `tools/probe-batch-size.mjs` is where
-that number comes from, and re-running it is how you find out whether it still holds.
+and the header fetch needs one header per swap-bearing block -- 53,467 of the 200,000 blocks in the
+window this project indexed, **26.7%**, not the **~43%** this file used to quote. 43% of 200,000 is
+86,000, and 86,000 is what an earlier, smaller span extrapolates to: that run fetched 11,688 headers
+over 27,136 blocks, which is 43.07% -- a real ratio for *that* window, and the wrong one for this.
+The only batch-capable endpoint delivers headers at about 20 per second, which is the number
+`tools/probe-batch-size.mjs` measures, and re-running it is how you find out whether it still holds.
 
 Watch a running backfill without disturbing it:
 

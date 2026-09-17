@@ -4,10 +4,11 @@
  * WHY THIS IS THE QUESTION WORTH ASKING
  *
  * The header fetch is the expensive half of a backfill: one header per distinct block containing a
- * swap, which for a 200,000-block window is ~120,000 headers. The batch path exists to make that
- * cheap -- but the batch size in the code was **200**, a number with no measurement behind it, and at
- * 200 blocks per request the window needs 600 requests. If the endpoint would serve 1,000, the same
- * work is 120 requests.
+ * swap, which for a 200,000-block window was **estimated** at ~120,000 headers -- 2.2x the 53,467 the
+ * window this project actually indexed turned out to contain (README, "Scale"). The batch path exists to
+ * make that cheap -- but the batch size in the code was **200**, a number with no measurement behind it,
+ * and at 200 blocks per request that estimate is 600 requests, against 268 by the measured count. If the
+ * endpoint would serve 1,000, the same work is 120 requests.
  *
  * The endpoints do not document this and they do not agree: `mainnet.base.org` answers a batch with
  * `-32014 maximum 1 request in batch`. So it gets measured, once, in about thirty seconds.

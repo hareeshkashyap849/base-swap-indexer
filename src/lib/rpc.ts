@@ -255,8 +255,10 @@ export class RpcPool {
      * WHY A COOLDOWN AND NOT A WRITE-OFF. There are only three endpoints here, and the one that
      * serves batches is also the one most likely to be rate-limited (it is the only one that serves
      * historical ranges, so every large request goes to it). Dropping it from the rotation for the
-     * rest of the run is how a 200,000-block header fetch ended up at 1.7 blocks/s: the pool kept
-     * asking endpoints that cannot serve a batch at all, and never went back to the one that can.
+     * rest of the run is how a 200,000-block header fetch ended up at 1.7 **swap-bearing** blocks/s --
+     * the headers that phase fetches, not the 200,000 the window spans, and that attempt's own figure
+     * rather than one this repository can re-measure (its log is not committed): the pool kept asking
+     * endpoints that cannot serve a batch at all, and never went back to the one that can.
      *
      * Waiting is not free either, so the wait is bounded and only applied when there is nothing else
      * to try. An endpoint that is merely rate-limited is worth retrying; an endpoint that answered
@@ -307,8 +309,10 @@ export class RpcPool {
            *
            * A rate-limited public endpoint often accepts the connection and then simply does not
            * answer, so the timeout IS the cost of finding out. At 90 s, one hung endpoint per batch
-           * put a ceiling of about 2 blocks/s on the whole header phase -- which is exactly what was
-           * measured before this was lowered. 30 s is still far above the ~1 s a served batch takes.
+           * put an arithmetic ceiling of about 2 blocks/s on the whole header phase: 200 headers in a
+           * batch against a 90 s wait, and 200 / 90 = 2.2. That is a division, not a second
+           * measurement -- the rate that attempt measured is the 1.7 swap-bearing blocks/s the README
+           * and `db.ts` carry for it. 30 s is still far above the ~1 s a served batch takes.
            */
           signal: AbortSignal.timeout(30_000),
         });
@@ -372,7 +376,8 @@ export class RpcPool {
          * marking it incapable removed it from the rotation for the rest of the run. Measured
          * consequence on a 200,000-block backfill: one transient rate limit on the endpoint that
          * *does* serve batches left the header fetch relying on endpoints that refuse them, and the
-         * phase ran at 1.7 blocks/s instead of hundreds.
+         * phase ran at 1.7 swap-bearing blocks/s instead of the 20 then 40 blocks/s it measured once
+         * the pool rotated (README, "Scale").
          *
          * A rate-limited endpoint should be tried again later, not written off. Retrying it costs one
          * request; writing it off costs the whole run.

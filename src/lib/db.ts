@@ -229,17 +229,20 @@ export class Store {
    *
    * Every header this project has ever fetched is already in the `blocks` table -- `upsertBlock`
    * puts it there, and `rollbackFrom` is the only thing that removes it. But a run needs one header
-   * per distinct block containing a swap, which for a 200,000-block window is ~120,000 headers, and
-   * until this method existed the run re-fetched every one of them on every pass because the cache
-   * started empty each time.
+   * per distinct block containing a swap: an **estimated** ~120,000 headers for a 200,000-block
+   * window, which the window this project actually indexed turned out to hold 53,467 of -- 2.2x fewer
+   * (README, "Scale"). Until this method existed the run re-fetched every one of them on every pass
+   * because the cache started empty each time.
    *
    * The cost is not theoretical: measured on the public endpoints, a header batch that lands on a
-   * rate-limited endpoint waits out its timeout, so the header phase ran at ~1.7 blocks/s and a
-   * 200,000-block window would have needed about twenty hours of pure repeat work for data already
-   * in the database.
+   * rate-limited endpoint waits out its timeout, so the header phase ran at ~1.7 swap-bearing
+   * blocks/s -- that attempt's own figure, attributed rather than recorded, as the estimate above is
+   * -- and the repeated work extrapolates to about twenty hours, which is exactly `~120,000 / 1.7`.
+   * The twenty hours moves with the estimate; the rate it divides by does not, and the window's real
+   * 53,467 headers at 1.7/s is 8.7 hours of that repeat work rather than twenty.
    *
-   * Batched through a temporary table rather than an `IN (...)` list: a 120,000-element parameter
-   * list exceeds SQLite's variable limit, and the failure ("too many SQL variables") would arrive
+   * Batched through a temporary table rather than an `IN (...)` list: a parameter list of that size
+   * exceeds SQLite's variable limit, and the failure ("too many SQL variables") would arrive
    * only on the large runs this exists to make possible.
    */
   getBlockTimestamps(blockNumbers: readonly bigint[]): Map<string, number> {
