@@ -23,6 +23,17 @@ npm run api        # http://127.0.0.1:3001
 
 Then open **http://127.0.0.1:3001/** for the dashboard.
 
+## What is public, and what is not
+
+The scale claim in this repository is a **measurement, not a hosted demo**, and the difference
+matters:
+
+| | |
+|---|---|
+| **Measured here** | 200,000 blocks indexed in 37 minutes, 96,980 swaps, `/api/stats?hours=120` reporting 77,685,103.82 USDC of volume across 2,801 traders. The window and the numbers are in the screenshot above and in `docs/`. |
+| **Reproducible** | `npm run index -- --blocks 200000` against the pool named above, on Base mainnet, with no key and no wallet. The measured RPC ceilings this run found (range limits, batch limits, per-endpoint behaviour) are recorded in this file and in `tools/` — the first attempt took 20 hours for exactly those reasons. |
+| **Not hosted** | there is no public URL for the API or the dashboard: a live demo needs a process and a database, and neither is free to keep running. What is public is the code, the measurement, and the query results the measurement is checked against. |
+
 Requires **Node 22.6+**. No compiler, no Docker, no database server, no front-end
 build.
 
