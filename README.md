@@ -30,7 +30,7 @@ matters:
 
 | | |
 |---|---|
-| **Measured here** | 200,000 blocks indexed in 37 minutes, 96,980 swaps, `/api/stats?hours=120` reporting 77,685,103.82 USDC of volume across 2,801 traders. The window and the numbers are in the screenshot above and in `docs/`. |
+| **Measured here** | 96,980 swaps over an indexed range of 200,000 blocks (51,192,412 → 51,392,411) on Base mainnet, `/api/stats?hours=120` reporting 77,685,103.82 USDC of volume across 2,801 traders. The window and the numbers are in the screenshot above and in `docs/`. **The run's duration is not in the database** — see "Scale" below for what it does record. |
 | **Reproducible** | `npm run index -- --blocks 200000` against the pool named above, on Base mainnet, with no key and no wallet. The measured RPC ceilings this run found (range limits, batch limits, per-endpoint behaviour) are recorded in this file and in `tools/` — the first attempt took 20 hours for exactly those reasons. |
 | **Not hosted** | there is no public URL for the API or the dashboard: a live demo needs a process and a database, and neither is free to keep running. What is public is the code, the measurement, and the query results the measurement is checked against. |
 
@@ -230,9 +230,11 @@ all data checks passed
 
 ### Scale, and where the limit actually is
 
-The database these numbers come from holds **96,980 swaps spanning exactly 200,000 blocks**
-(51,192,413 → 51,392,411, i.e. 2026-09-12 to 2026-09-16), indexed from chain in **37 minutes**. The API
-serves it directly:
+The database these numbers come from holds **96,980 swaps over an indexed range of exactly 200,000
+blocks** — 51,192,412 → 51,392,411, i.e. 2026-09-12 to 2026-09-16, the range the indexer's own
+`range_indexed` row names. The first block *containing* a swap is 51,192,413, one block later, and
+that is the number `/api/stats` reports as `firstBlock`: it is the first swap's block, not the start
+of the indexed range. The API serves the database directly:
 
 ```
 GET /api/stats?hours=120
@@ -240,6 +242,20 @@ GET /api/stats?hours=120
    "uniqueTraders":2801, "firstBlock":51192413, "lastBlock":51392411,
    "low":2359.2114541627666, "high":2613.8638348029644}
 ```
+
+**The one number the database does not record is how long the run took.** The "37 minutes" this file
+used to state beside that window cannot be read out of it: `indexer_log` has no duration row, and its
+timestamps span **86 minutes** (2026-09-16T15:07:10Z → 16:33:12Z) over **862 rows, 856 of them
+`rpc_error`**, because the log is append-only and still holds every earlier attempt at this window. A
+reviewer who opens the database and reads `MIN(ts)`/`MAX(ts)` sees 86 minutes, not 37, and is right
+to ask which one is the run. What the artifact does record is where the run ended: one
+`range_indexed` row — `51192412-51392411 swaps=96980` — written at 16:33:12Z, with
+`indexer_state.updated_at` set one millisecond before it. The 37 minutes comes from the indexer's own
+end-of-run summary (`elapsed 2222.1s`), which it prints to the console and never writes to the
+database — the commit message that added this section states the same figure. It is consistent with
+the rows that did survive: the 388 `rpc_error` entries in the final 2222.1 s of `indexer_log` are
+exactly the 388 failures that run's summary reported. But consistent is not recorded, and no `SELECT`
+returns the duration. To get the number, run the backfill and read the summary it prints.
 
 **The bottleneck is the endpoints, not the code, and that is measurable rather than a claim.** The log
 scan is 100 requests of 2,000 blocks; the header fetch needs one header per block containing a swap
