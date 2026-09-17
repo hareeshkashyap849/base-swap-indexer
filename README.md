@@ -31,7 +31,7 @@ matters:
 | | |
 |---|---|
 | **Measured here** | 96,980 swaps over an indexed range of 200,000 blocks (51,192,412 → 51,392,411) on Base mainnet, `/api/stats?hours=120` reporting 77,685,103.82 USDC of volume across 2,801 traders. The window and the numbers are in the screenshot above and in `docs/`. **The run's duration is not in the database** — see "Scale" below for what it does record. |
-| **Reproducible** | `npm run index -- --blocks 200000` against the pool named above, on Base mainnet, with no key and no wallet. The measured RPC ceilings this run found (range limits, batch limits, per-endpoint behaviour) are recorded in this file and in `tools/` — the first attempt took 20 hours for exactly those reasons. |
+| **Reproducible** | `npm run index -- --blocks 200000` against the pool named above, on Base mainnet, with no key and no wallet. The measured RPC ceilings this run found (range limits, batch limits, per-endpoint behaviour) are recorded in this file and in `tools/` — the first attempt ran its header phase at 1.7 blocks/s for exactly those reasons, and the twenty hours it is credited with is attributed, not recorded: "Scale" below shows the division and what it is a division of. |
 | **Not hosted** | there is no public URL for the API or the dashboard: a live demo needs a process and a database, and neither is free to keep running. What is public is the code, the measurement, and the query results the measurement is checked against. |
 
 Requires **Node 22.6+**. No compiler, no Docker, no database server, no front-end
@@ -197,11 +197,12 @@ discovery.test.ts        7    fixture discovery
 
 `rpc-pool.test.ts` runs a **real HTTP server on localhost** rather than mocking `fetch`, because what
 it tests is how the pool behaves when an endpoint answers with a real status and a real body. It was
-written against two defects that cost a measured 200,000-block backfill about twenty hours of
-avoidable work: a rate limit was remembered as "this endpoint cannot serve batches" (removing the only
-batch-capable endpoint from the rotation for the rest of the run), and an HTTP `429` was read as a
-statement about the endpoint's capabilities rather than about the current second. Both are now pinned
-by tests that fail if the distinction is lost again.
+written against two defects that cost the first attempt at this window about twenty hours of avoidable
+work — a figure attributed to that attempt, whose log is not committed here (see "Scale"): a rate limit
+was remembered as "this endpoint cannot serve batches" (removing the only batch-capable endpoint from
+the rotation for the rest of the run), and an HTTP `429` was read as a statement about the endpoint's
+capabilities rather than about the current second. Both are now pinned by tests that fail if the
+distinction is lost again.
 
 Plus a data audit against the indexed database:
 
@@ -260,8 +261,19 @@ returns the duration. To get the number, run the backfill and read the summary i
 **The bottleneck is the endpoints, not the code, and that is measurable rather than a claim.** The log
 scan is 100 requests of 2,000 blocks; the header fetch needs one header per block containing a swap
 (53,467 of them here) and only a batching endpoint makes that affordable. The first attempt at this
-window ran the header phase at **1.7 blocks/s** — about twenty hours — and the cause was three defects
-in this repository, all now fixed and pinned by tests:
+window ran the header phase at **1.7 blocks/s** — swap-bearing blocks, which are the headers that
+phase fetches, **not** the 200,000 blocks the window spans. That distinction is the arithmetic: 53,467
+÷ 1.7 is **8.7 hours**, and 200,000 ÷ 1.7 would be 32.7 hours, so neither is the "about twenty hours"
+this file used to write beside the rate. Twenty hours is `~120,000 ÷ 1.7`, where ~120,000 is the
+*estimated* header count for a 200,000-block window that `src/lib/db.ts` and
+`tools/probe-batch-size.mjs` carry — this window turned out to have 53,467, so that estimate is 2.2×
+high and the twenty hours is an extrapolation from it rather than a stopwatch reading. **Both the
+rate and the twenty hours are attributed, not recorded**, for the same reason the 37 minutes above
+is: the first attempt's log is not committed here, and the database holds neither a rate nor a
+progress row to recompute either from — `indexer_log` is 862 rows, 856 of them `rpc_error`, 5
+`batch_fallback`, 1 `range_indexed`. Re-run the backfill and the summary it prints is the only figure
+that exists. The cause of the rate was three defects in this repository, all now fixed and pinned by
+tests:
 
 | Defect | What it did |
 |---|---|
