@@ -418,9 +418,16 @@ Measured 2026-09-16, asking each endpoint for batches of block headers:
 | `mainnet.base.org` | `-32014 maximum 1 request in batch` | same | same | same | cannot batch at all |
 | `base.drpc.org` | `Batch of more than 3 requests` (HTTP 500) | same | same | same | cannot batch usefully |
 
-A 200,000-block window needs roughly **86,000 headers** (about 43% of blocks contain a swap), so at
-20/second the header phase alone is **about 72 minutes**. That is the endpoint's throughput, not the
-program's: the run measures at ~16.7 headers/s, which is ~84% of what the probe says is available.
+A 200,000-block window needs **one header per block containing a swap**, and the window this project
+indexed contains **53,467** of them — **26.7%** of its blocks, where this file used to state "roughly
+86,000 headers (about 43% of blocks contain a swap)". 43% is a real ratio for a *different, earlier*
+window: that run fetched 11,688 swap-bearing blocks over a 27,136-block span, which is 43.07%. That
+was the wrong ratio for this window, and the other two figures followed from it — 43% of 200,000 is
+86,000, and 86,000 ÷ 20 is the **"about 72 minutes"** this line used to state. Reckoned from the
+measured count instead, at **20 headers/second** — the probe's ceiling — the header phase is
+53,467 ÷ 20 = **about 45 minutes**, while at the rate **the run itself measured, ~16.7 headers/s**,
+the same phase is 53,467 ÷ 16.7 = **about 53 minutes**. That gap is the endpoint's throughput versus
+the program's.
 
 The batch size of **200** is therefore a measurement, not a guess: 500 works but takes 23.9 s against
 the batch path's 30 s timeout, which leaves no margin on a slow day.

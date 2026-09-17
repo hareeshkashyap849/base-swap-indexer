@@ -132,8 +132,11 @@ if (AS_JSON) {
   console.log(`\n${usable.length} of ${results.length} candidate endpoints serve a batch of ${BATCH} headers:`);
   for (const r of usable) console.log(`  ${r.url}  (${r.ms.batch}ms)`);
   console.log(
-    '\nEach one added to RPC_URLS multiplies the header-fetch ceiling. The measured single-endpoint rate\n' +
-      'is ~20 headers/s, so three usable hosts is roughly 60/s and a 200,000-block window finishes in\n' +
-      'about 25 minutes instead of two hours.',
+    '\nEach one added to RPC_URLS multiplies the header-fetch ceiling. That rate is arithmetic from this\n' +
+      'probe\'s own timing, 200 headers over the seconds shown beside each host: 19.0-31.7 per second for\n' +
+      'the three that answered, which is why the README rounds the figure down to ~20. The header phase\n' +
+      'needs one header per block containing a swap: 53,467 of them in the 200,000-block window this\n' +
+      'project indexed (README, "Scale"), so 53,467 / 20 = about 45 minutes if every header went through\n' +
+      'one host, against 53,467 / 60 = about 15 with three hosts answering at once.',
   );
 }

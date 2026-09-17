@@ -146,8 +146,10 @@ export const ERC20_ABI = [
  * WHICH ENDPOINTS CAN BATCH, WHICH IS WHAT THE HEADER PHASE NEEDS
  *
  * The log scan is 100 requests for a 200,000-block window; the header fetch is one per distinct
- * block containing a swap (~86,000 of them), so **the header phase is the expensive one and only a
- * batching endpoint makes it affordable**. `tools/probe-endpoints.mjs` measured every candidate host
+ * block containing a swap -- 53,467 of them in the 200,000-block window this project indexed, where
+ * this comment used to carry ~86,000, an estimate made before the window ran -- so **the header phase
+ * is the expensive one and only a batching endpoint makes it affordable**.
+ * `tools/probe-endpoints.mjs` measured every candidate host
  * on 2026-09-16, asking for 200 headers in one request:
  *
  *   base-rpc.publicnode.com              OK 200   (10.5 s)
@@ -160,7 +162,7 @@ export const ERC20_ABI = [
  *   base.llamarpc.com, base.blockpi.network   HTML, not JSON-RPC
  *   base.api.onfinality.io/public        needs an API key
  *
- * That measurement is why the list below is four long rather than three: **the ceiling on a large
+ * That measurement is why the list below is five long rather than three: **the ceiling on a large
  * backfill is the number of batch-capable endpoints, not the batch size.** One host delivered ~20
  * headers/s and the phase crawled once that host throttled; three usable hosts are roughly three
  * times the ceiling.

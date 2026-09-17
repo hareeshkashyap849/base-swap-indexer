@@ -117,21 +117,36 @@ over 27,136 blocks, which is 43.07% -- a real ratio for *that* window, and the w
 The only batch-capable endpoint delivers headers at about 20 per second, which is the number
 `tools/probe-batch-size.mjs` measures, and re-running it is how you find out whether it still holds.
 
-Watch a running backfill without disturbing it:
+Watch a running backfill without disturbing it. The watcher opens the database `readOnly`, so it
+costs the run nothing:
 
 ```bash
 node ../../toolchain/watch-index-progress.mjs data/swaps-scale.sqlite --seconds 30
 ```
 
 ```
-t0      blocks=9942 swaps=0 log=406 batchFallbacks=2
-t+30s   blocks=10542 (+600) swaps=0 (+0) batchFallbacks=2 (+0)
-header rate      : 20.0 blocks/s
-estimate to 86000 blocks: 62.9 minutes remaining
+t0      blocks=53739 swaps=96980 log=862 batchFallbacks=5
+        swap range 51192413 .. 51392411
+t+30s  blocks=53739 (+0) swaps=96980 (+0) batchFallbacks=5 (+0)
+
+header rate      : 0.0 blocks/s
+batch fallbacks  : 0 in 30s (batches are working)
 ```
 
-The `batchFallbacks` counter is the one to read first: it counts slices that had to be fetched one
-block at a time, which is 200× the requests and the difference between an hour and a day.
+That is the command's real output, reproduced against the finished 200,000-block database -- where
+nothing is being written, so the rate is 0.0. **What it prints is a header rate and a batch-fallback
+count, not an estimate.** The `estimate to N blocks: M minutes remaining` line this file used to show
+here comes from `--expect-blocks N`, and it is printed *only* when that flag is passed **and** the
+measured rate is above zero (`watch-index-progress.mjs` lines 25 and 66-69); the command documented
+above passes no flag, so a reader following it never saw that line. The `86000` in it was this
+window's stale header estimate and `62.9` was `(86000 - 10542) / 20 / 60` -- arithmetic over the old
+figures above, not output from any run. **What the command does print is worth more than the estimate
+was**: `batchFallbacks` counts slices fetched one block at a time, which is 200x the requests and the
+difference between an hour and a day.
+
+`--expect-blocks N` still earns its place during a real backfill: it reads the database, not the
+console, so it prints a countdown measured from the run's own rate -- whenever that rate is above
+zero, which is the only condition under which a countdown means anything.
 
 ### Test that the checks can actually fail
 
