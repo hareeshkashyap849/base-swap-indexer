@@ -1,6 +1,6 @@
 # base-swap-indexer
 
-[![CI](https://github.com/hareeshkashyap849/base-swap-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/hareeshkashyap849/base-swap-indexer/actions/workflows/ci.yml)
+[![CI](https://github.com/wuzilin-web3/base-swap-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/wuzilin-web3/base-swap-indexer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Indexes every swap on a Uniswap V3 WETH/USDC pool on **Base mainnet**, stores
